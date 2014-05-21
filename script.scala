@@ -121,7 +121,7 @@ def simplify(r: Rexp): Rexp = r match {
 		(x1, y1) match {
 			case (NULL, z) => z
 			case (z, NULL) => z
-			case (z1, z2) => ALT(z1, z2) 
+			case (z1, z2) => ALT(z1, z2)
 		}
 	}
 	case STAR(x) => {
@@ -131,10 +131,59 @@ def simplify(r: Rexp): Rexp = r match {
 	}
 }
 
-val r1: Rexp = "ar" | "a"
-val r2 = der(r1, 'a')
-var r3 = der(r2, 'r')
+def simplify2(r: Rexp): (Rexp, Val => Val) = r match {
+	case CHAR(x) => (CHAR(x), (v: Val) => v)
+	case NULL => (NULL, (v: Val) => v)
+	case EMPTY => (EMPTY, (v: Val) => v)
+	/* case SEQ(x, y) => {
+		val (x1, f1) = simplify2(x)
+		val (y1, f2) = simplify2(y)
+		(x1, y1) match {
+			case (z, NULL) => (NULL, (v: Val) => v)
+			case (NULL, z) => (NULL, (v: Val) => v)
+			case (z, EMPTY) => (z, seqvEmptyRightPartial(_: Val, f1, f2))
+			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
+		}
+	} */
+	case ALT(x, y) => {
+		val (x1, f1) = simplify2(x)
+		val (y1, f2) = simplify2(y)
+		(x1, y1) match {
+			case (z, NULL) => (z, (v: Val) => Left(f1(v)))
+			case (NULL, z) => (z, (v: Val) => Right(f2(v)))
+			case (EMPTY, EMPTY) => (EMPTY, (v: Val) => Left(f1(v)))
+			case (z1, z2) => (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
+		}
+	}
+	case STAR(x) => {
+		val (x1, f1) = simplify2(x)
+		if (x1 == NULL || x1 == EMPTY) (x1, (v: Val) => v)
+		else (STAR(x1), (v: Val) => v)
+	}
+}
+def seqvEmptyLeftPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = Seqv(f1(Void), f2(v))
 
-println(r3)
-println
-println(simplify(r3))
+def seqvEmptyRightPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = Seqv(f1(v), f2(Void))
+
+def alternativeValPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = v match {
+	case Left(x) => Left(f1(x))
+	case Right(x) => Right(f2(x))
+	case _ => throw new IllegalArgumentException
+}
+
+def seqvPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = v match {
+	case Seqv(v1, v2) => Seqv(f1(v1), f2(v2))
+	case _ => throw new IllegalArgumentException
+}
+
+def parseSimp(r: Rexp, s: List[Char]): Val = s match {
+	case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+	case head::tail => {
+		val (rd, funct) = simplify2(r)
+		funct(inj(rd, head, parseSimp(der(rd, head), tail)))
+	}
+}
+
+
+val r1: Rexp = "r" | "a" | "b" | "c"
+println(parseSimp(r1, "a".toList))
