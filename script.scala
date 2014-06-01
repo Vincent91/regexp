@@ -31,11 +31,11 @@ implicit def rexpOps(r: Rexp) = new {
 }
 
 implicit def stringOps(s: String) = new {
-	def | (r: String) = ALT(s, r)
 	def | (r: Rexp) = ALT(s, r)
+	def | (r: String) = ALT(s, r)
 	def % = STAR(s)
-	def ~ (r: String) = SEQ(s, r)
-	def ~ (r: Rexp) = SEQ(s, r)	
+	def ~ (r: Rexp) = SEQ(s, r)
+	def ~ (r: String) = SEQ(s, r)	
 }
 
 def nullable(r: Rexp): Boolean = r match {
@@ -78,7 +78,7 @@ def mkEps(r: Rexp): Val = r match {
 		if (nullable(v1)) Left(mkEps(v1))
 		else Right(mkEps(v2))
 	case SEQ(v1, v2) => Seqv(mkEps(v1), mkEps(v2))
-	case NULL => Stars(Nil)
+	case STAR(r) => Stars(Nil)
 }
 
 def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
@@ -135,16 +135,17 @@ def simplify2(r: Rexp): (Rexp, Val => Val) = r match {
 	case CHAR(x) => (CHAR(x), (v: Val) => v)
 	case NULL => (NULL, (v: Val) => v)
 	case EMPTY => (EMPTY, (v: Val) => v)
-	/* case SEQ(x, y) => {
+	case SEQ(x, y) => {
 		val (x1, f1) = simplify2(x)
 		val (y1, f2) = simplify2(y)
 		(x1, y1) match {
-			case (z, NULL) => (NULL, (v: Val) => v)
-			case (NULL, z) => (NULL, (v: Val) => v)
+			case (z, NULL) => (z, (v: Val) => v)
+			case (NULL, z) => (z, (v: Val) => v)
+			case (EMPTY, z) => (z, seqvEmptyLeftPartial(_: Val, f1, f2))
 			case (z, EMPTY) => (z, seqvEmptyRightPartial(_: Val, f1, f2))
 			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
 		}
-	} */
+	} 
 	case ALT(x, y) => {
 		val (x1, f1) = simplify2(x)
 		val (y1, f2) = simplify2(y)
@@ -185,5 +186,6 @@ def parseSimp(r: Rexp, s: List[Char]): Val = s match {
 }
 
 
-val r1: Rexp = "r" | "a" | "b" | "c"
-println(parseSimp(r1, "a".toList))
+val r1: Rexp = ("a" | "b" | "ab").%
+println(parse(r1, "abbb".toList))
+//println(parseSimp(r1, "abbb".toList))
