@@ -139,8 +139,6 @@ def simplify2(r: Rexp): (Rexp, Val => Val) = r match {
 		val (x1, f1) = simplify2(x)
 		val (y1, f2) = simplify2(y)
 		(x1, y1) match {
-			case (z, NULL) => (z, (v: Val) => v)
-			case (NULL, z) => (z, (v: Val) => v)
 			case (EMPTY, z) => (z, seqvEmptyLeftPartial(_: Val, f1, f2))
 			case (z, EMPTY) => (z, seqvEmptyRightPartial(_: Val, f1, f2))
 			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
@@ -185,7 +183,33 @@ def parseSimp(r: Rexp, s: List[Char]): Val = s match {
 	}
 }
 
+def PLUS(r: Rexp) = r ~ r.%
+val SYM = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+val DIGIT = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+val ID = SYM ~ (SYM | DIGIT).% 
+val NUM = PLUS(DIGIT)
+val KEYWORD : Rexp = "skip" | "while" | "do" | "if" | "then" | "else" | "read" | "write" | "true" | "false"
+val SEMI: Rexp = ";"
+val OP: Rexp = ":=" | "==" | "-" | "+" | "*" | "!=" | "<" | ">" | "%" | "/"
+val WHITESPACE = PLUS(" " | "\n" | "\t")
+val RPAREN: Rexp = ")"
+val LPAREN: Rexp = "("
+val BEGIN: Rexp = "{"
+val END: Rexp = "}"
 
-val r1: Rexp = ("a" | "b" | "ab").%
-println(parse(r1, "abbb".toList))
+val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
+
+// Some Tests
+
+val pfib = """read   n; write n"""
+println(parseSimp(WHILE_REGS, pfib.toList))
+
+// val pfib_reg = ders(pfib.toList, WHILE_REGS)
+// val Stars(vs) = parse(WHILE_REGS, pfib.toList)
+// println(vs.map(flat(_)).mkString("|"))
+
+
+
+// val r1: Rexp = ("a" | "b" | "ab").%
+// println(parse(r1, "abbb".toList))
 //println(parseSimp(r1, "abbb".toList))
