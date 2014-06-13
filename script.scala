@@ -148,6 +148,8 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 		val (x1, f1) = simplifyWithoutAssociativity(x)
 		val (y1, f2) = simplifyWithoutAssociativity(y)
 		(x1, y1) match {
+			case (NULL, _) => (NULL, (v: Val) => v)
+			case (_, NULL) => (NULL, (v: Val) => v)
 			case (EMPTY, z) => (z, seqvEmptyLeftPartial(_: Val, f1, f2))
 			case (z, EMPTY) => (z, seqvEmptyRightPartial(_: Val, f1, f2))
 			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
@@ -159,9 +161,8 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 		(x1, y1) match {
 			case (z, NULL) => (z, (v: Val) => Left(f1(v)))
 			case (NULL, z) => (z, (v: Val) => Right(f2(v)))
-			case (EMPTY, EMPTY) => (EMPTY, (v: Val) => Left(f1(v)))
-			case (z1, z2) if z1 == z2 => (z1, (v: Val) => Left(f1(v)))
-			case (z1, z2) => (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
+			case (z1, z2) => if (z1 == z2) (z1, (v: Val) => Left(f1(v))) 
+				else (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
 		}
 	}
 	case r => (r, (v: Val) => v)
@@ -221,7 +222,7 @@ val ID = SYM ~ (SYM | DIGIT).%
 val NUM = PLUS(DIGIT)
 val KEYWORD : Rexp = "skip" | "while" | "do" | "if" | "then" | "else" | "read" | "write" | "true" | "false"
 val SEMI: Rexp = ";"
-val OP: Rexp = ":=" | "==" | "-" | "+" | "*" | "!=" | "<" | ">" | "%" | "/"
+val OP: Rexp = ":=" | "==" | "-" | "+" | "*" | "!=" | "<" | ">" | "<=" | ">=" | "%" | "/"
 val WHITESPACE = PLUS(" " | "\n" | "\t")
 val RPAREN: Rexp = ")"
 val LPAREN: Rexp = "("
