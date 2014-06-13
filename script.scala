@@ -127,11 +127,6 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 			case (z1, z2) => (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
 		}
 	}
-	case STAR(x) => {
-		val (x1, f1) = simplify(x)
-		if (x1 == NULL || x1 == EMPTY) (x1, (v: Val) => v)
-		else (STAR(x1), (v: Val) => v)
-	}
 	case r => (r, (v: Val) => v)
 }
 
@@ -165,14 +160,11 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 			case (z, NULL) => (z, (v: Val) => Left(f1(v)))
 			case (NULL, z) => (z, (v: Val) => Right(f2(v)))
 			case (EMPTY, EMPTY) => (EMPTY, (v: Val) => Left(f1(v)))
+			case (z1, z2) if z1 == z2 => (z1, (v: Val) => Left(f1(v)))
 			case (z1, z2) => (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
 		}
 	}
-	case STAR(x) => {
-		val (x1, f1) = simplifyWithoutAssociativity(x)
-		if (x1 == NULL || x1 == EMPTY) (x1, (v: Val) => v)
-		else (STAR(x1), (v: Val) => v)
-	}
+	case r => (r, (v: Val) => v)
 }
 
 
@@ -203,9 +195,14 @@ def parseSimp(r: Rexp, s: List[Char]): Val = s match {
 	}
 }
 
-def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = s match {
-	case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = 
+	s match {
+	case Nil => {
+		println(calculateRexpElements(r))
+		if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+	}
 	case head::tail => {
+		println(calculateRexpElements(r))
 		val (rd, funct) = simplifyWithoutAssociativity(r)
 		funct(inj(rd, head, parseSimpNoAssociativity(der(rd, head), tail)))
 	}
@@ -235,7 +232,7 @@ val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END
 
 // Some Tests
 
-val pfib = """read   n; write n"""
+val pfib = """read n"""
 
 def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	case Nil => println(calculateRexpElements(r))
@@ -245,11 +242,11 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-calculator(WHILE_REGS, pfib.toList)
+//calculator(WHILE_REGS, pfib.toList)
 
-println(parseSimp(WHILE_REGS, pfib.toList))
-println("________________________________")
 println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+// println("________________________________")
+// println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
 
 
 //------------------------------------
