@@ -236,6 +236,7 @@ def adder(v: Val, steps: Int, f: Val => Val): Val = {
 }
 
 def parseSimp(r: Rexp, s: List[Char]): Val = {
+	println("rexp info:");
 	println(r);
 	println();
 	println(calculateRexpElements(r));
