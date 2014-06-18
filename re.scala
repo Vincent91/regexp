@@ -114,7 +114,7 @@ def mkeps(r: Rexp) : Val = r match {
     if (nullable(r1)) Left(mkeps(r1)) else Right(mkeps(r2))
   case SEQ(r1, r2) => Sequ(mkeps(r1), mkeps(r2))
   case STAR(r) => Stars(Nil)
-  //case RECD(x, r) => Rec(x, mkeps(r))
+  case RECD(x, r) => Rec(x, mkeps(r))
 }
 
 def inj(r: Rexp, c: Char, v: Val) : Val = (r, v) match {
@@ -125,7 +125,7 @@ def inj(r: Rexp, c: Char, v: Val) : Val = (r, v) match {
   case (ALT(r1, r2), Left(v1)) => Left(inj(r1, c, v1))
   case (ALT(r1, r2), Right(v2)) => Right(inj(r2, c, v2))
   case (CHAR(d), Void) => Chr(d) 
-  //case (RECD(x, r1), _) => Rec(x, inj(r1, c, v))
+  case (RECD(x, r1), _) => Rec(x, inj(r1, c, v))
 }
 
 // some "rectification" functions for simplification
@@ -265,40 +265,40 @@ val WHILE_REGS2 = (KEYWORD |
 // Some Tests
 //============
 
-// def time[T](code: => T) = {
-  // val start = System.nanoTime()
-  // val result = code
-  // val end = System.nanoTime()
-  // println((end - start)/1.0e9)
-  // result
-// }
+def time[T](code: => T) = {
+  val start = System.nanoTime()
+  val result = code
+  val end = System.nanoTime()
+  println((end - start)/1.0e9)
+  result
+}
 
-val prog0 = """read n"""
-println(lexing_simp(WHILE_REGS2, prog0))
+// val prog0 = """read n"""
+// println(lexing_simp(WHILE_REGS2, prog0))
 
 // val prog1 = """read  n; write (n)"""
 // env (lexing_simp(WHILE_REGS, prog1))
 
-// val prog2 = """
-// i := 2;
-// max := 100;
-// while i < max do {
-  // isprime := 1;
-  // j := 2;
-  // while (j * j) <= i + 1  do {
-    // if i % j == 0 then isprime := 0  else skip;
-    // j := j + 1
-  // };
-  // if isprime == 1 then write i else skip;
-  // i := i + 1
-// }"""
+val prog2 = """
+i := 2;
+max := 100;
+while i < max do {
+  isprime := 1;
+  j := 2;
+  while (j * j) <= i + 1  do {
+    if i % j == 0 then isprime := 0  else skip;
+    j := j + 1
+  };
+  if isprime == 1 then write i else skip;
+  i := i + 1
+}"""
 // lexing_acc(WHILE_REGS, prog2)
 
 
-// for (i <- 1 to 100 by 1) {
-  // print(i.toString + ":  ")
-  // time(lexing_acc(WHILE_REGS, prog2 * i))
-// }
+for (i <- 1 to 200 by 1) {
+  print(i.toString + ":  ")
+  time(lexing_acc(WHILE_REGS, prog2 * i))
+}
 /*
 for (i <- 1 to 100 by 10) {
   print(i.toString + ":  ")

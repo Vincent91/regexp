@@ -239,11 +239,7 @@ def adder(v: Val, steps: Int, f: Val => Val): Val = {
 def parseSimp(r: Rexp, s: List[Char]): Val = {
 	// println(calculateRexpElements(r));
 	s match {
-		case Nil => {
-			if (nullable(r)) {
-				mkEps(r);
-			} else throw new IllegalArgumentException
-		}
+		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
 		case head::tail => {
 			val (rd, funct) = simplify(der(r, head))
 			inj(r, head, funct(parseSimp(rd, tail)))
@@ -254,9 +250,7 @@ def parseSimp(r: Rexp, s: List[Char]): Val = {
 def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 	// println(calculateRexpElements(r));
 	s match {
-		case Nil => {
-			if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
-		}
+		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
 			inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
@@ -318,21 +312,21 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-// val prog2 = """
-// i := 2;
-// max := 100;
-// while i < max do {
-//   isprime := 1;
-//   j := 2;
-//   while (j * j) <= i + 1  do {
-//     if i % j == 0 then isprime := 0  else skip;
-//     j := j + 1
-//   };
-//   if isprime == 1 then write i else skip;
-//   i := i + 1
-// }"""
+val prog2 = """
+i := 2;
+max := 100;
+while i < max do {
+  isprime := 1;
+  j := 2;
+  while (j * j) <= i + 1  do {
+    if i % j == 0 then isprime := 0  else skip;
+    j := j + 1
+  };
+  if isprime == 1 then write i else skip;
+  i := i + 1
+}"""
 
-// for (i <- 1 to 100 by 1) {
-//   print(i.toString + ":  ")
-//   parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
-// }
+for (i <- 1 to 100 by 1) {
+  print(i.toString + ":  ")
+  parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
+}
