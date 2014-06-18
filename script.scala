@@ -5,6 +5,7 @@ import scala.annotation.tailrec
 abstract class Rexp 
 case object NULL extends Rexp
 case object EMPTY extends Rexp
+case object DUMMY extends Rexp
 case class CHAR(c: Char) extends Rexp
 case class ALT(r1: Rexp, r2: Rexp) extends Rexp 
 case class SEQ(r1: Rexp, r2: Rexp) extends Rexp 
@@ -66,7 +67,7 @@ def der(r: Rexp, c: Char): Rexp = r match {
 	case SEQ(v1, v2) => 
 		if (nullable(v1)) ALT(SEQ(der(v1, c), v2), der(v2, c)) 
 		else SEQ(der(v1, c), v2)
-	case STAR(r) => SEQ(der(r, c), STAR(r))
+	case STAR(v) => SEQ(der(v, c), STAR(v))
 }
 
 def ders(r: Rexp, s: List[Char]): Rexp = s match {
@@ -114,10 +115,10 @@ def altFinder(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
 		if (r == left) (right, step, false)
 		else {
 			val (r1, step1, flag) = altFinder(r, right, step + 1);
-			(if (r1 == NULL) left else ALT(left, r1), step1, flag)
+			(if (r1 == DUMMY) left else ALT(left, r1), step1, flag)
 		}
 	}
-	case reg => if (r == reg) (NULL, step, true)
+	case reg => if (r == reg) (DUMMY, step, true)
 				else  (reg, -1, false)
 }
 
@@ -131,7 +132,7 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 	case ALT(x, y) => {
 		y match {
 			case ALT(_, _) => {
-				val (reg, steps, flag) = altFinder(x, y, 1)
+				val (reg, steps, flag) = altFinder(x, y, 1);
 				if (steps == -1) {
 					val (x1, f1) = simplify(x)
 					val (y1, f2) = simplify(y)
@@ -181,10 +182,10 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 		val (x1, f1) = simplifyWithoutAssociativity(x)
 		val (y1, f2) = simplifyWithoutAssociativity(y)
 		(x1, y1) match {
-			case (NULL, z) => (z, (v: Val) => Right(f2(v)))
-			case (z, NULL) => (z, (v: Val) => Left(f1(v)))
-			case (z1, z2) => if (z1 == z2) (z1, (v: Val) => Left(f1(v))) 
-				else (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
+			case (NULL, _) => (y1, (v: Val) => Right(f2(v)))
+			case (_, NULL) => (x1, (v: Val) => Left(f1(v)))
+			case _ => if (x1 == y1) (x1, (v: Val) => Left(f1(v))) 
+				else (ALT(x1, y1), alternativeValPartial(_: Val, f1, f2))
 		}
 	}
 	case SEQ(x, y) => {
@@ -193,9 +194,9 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 		(x1, y1) match {
 			case (NULL, _) => (NULL, (v: Val) => v)
 			case (_, NULL) => (NULL, (v: Val) => v)
-			case (EMPTY, z) => (z, seqvEmptyLeftPartial(_: Val, f1, f2))
-			case (z, EMPTY) => (z, seqvEmptyRightPartial(_: Val, f1, f2))
-			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
+			case (EMPTY, _) => (y1, seqvEmptyLeftPartial(_: Val, f1, f2))
+			case (_, EMPTY) => (x1, seqvEmptyRightPartial(_: Val, f1, f2))
+			case _ => (SEQ(x1, y1), seqvPartial(_: Val, f1, f2))
 		}
 	} 
 	case reg => (reg, (v: Val) => v)
@@ -236,17 +237,16 @@ def adder(v: Val, steps: Int, f: Val => Val): Val = {
 }
 
 def parseSimp(r: Rexp, s: List[Char]): Val = {
-	println("rexp info:");
-	println(r);
-	println();
-	println(calculateRexpElements(r));
+	println("Size " + calculateRexpElements(r));
 	s match {
 		case Nil => {
-			if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+			if (nullable(r)) {
+				mkEps(r);
+			} else throw new IllegalArgumentException
 		}
 		case head::tail => {
-			val (rd, funct) = simplify(r)
-			funct(inj(rd, head, parseSimp(der(rd, head), tail)))
+			val (rd, funct) = simplify(der(r, head))
+			inj(r, head, funct(parseSimp(rd, tail)))
 		}
 	}
 }
@@ -258,8 +258,8 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 			if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
 		}
 		case head::tail => {
-			val (rd, funct) = simplifyWithoutAssociativity(r)
-			funct(inj(rd, head, parseSimpNoAssociativity(der(rd, head), tail)))
+			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
+			inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
 		}
 	}
 }
@@ -278,15 +278,7 @@ val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
 
-val WHILE_REGS = (KEYWORD | 
-                  ID | 
-                  OP | 
-                  NUM | 
-                  SEMI | 
-                  LPAREN | RPAREN | 
-                  BEGIN | END | 
-                  WHITESPACE).%
-
+val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 // Some Tests
 
 val pfib = """read n"""
@@ -299,25 +291,18 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-//calculator(WHILE_REGS, pfib.toList)
+// calculator(WHILE_REGS, pfib.toList)
 
-// println(parseSimp(WHILE_REGS, pfib.toList))
+println(parseSimp(WHILE_REGS, pfib.toList))
 // println("________________________________")
 // println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
 
 
 //------------------------------------
 
-// val regularka = (("aa" | "ab" | "c" | "a") ~ ("ee" | "ed" | "e" | "c")).%
-// val stroka = "ae"
+// val regularka = ("aa" | "ab" | "c" | "a" | "ee" | "ed" | "e" | "c").%
+// val stroka = "aeceaedaacedededc"
 
-// println(calculateRexpElements(regularka))
-// println(calculateRexpElements(der(regularka, 'a')))
-// println("-------------")
-// println(calculateRexpElements(der(der(regularka, 'a'), 'e')))
-// println()
-// println(parseSimpNoAssociativity(regularka, stroka.toList))
-// println("-------------")
 // println(parseSimp(regularka, stroka.toList))
 
 //------------------------------------
@@ -328,5 +313,5 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-val checker: Rexp = ("aaaaa" | ("aaaaa" | ("aaaaa" | "aaaaa")))
-parseSimp(checker, "aaaaa".toList)
+// val checker: Rexp = ("aaaaa" | "write" | "skip" | "read")
+// parseSimp(checker, "aaaaa".toList)
