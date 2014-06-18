@@ -237,7 +237,7 @@ def adder(v: Val, steps: Int, f: Val => Val): Val = {
 }
 
 def parseSimp(r: Rexp, s: List[Char]): Val = {
-	println("Size " + calculateRexpElements(r));
+	// println(calculateRexpElements(r));
 	s match {
 		case Nil => {
 			if (nullable(r)) {
@@ -252,7 +252,7 @@ def parseSimp(r: Rexp, s: List[Char]): Val = {
 }
 
 def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
-	println(calculateRexpElements(r));
+	// println(calculateRexpElements(r));
 	s match {
 		case Nil => {
 			if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
@@ -281,7 +281,7 @@ val END: Rexp = "}"
 val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 // Some Tests
 
-val pfib = """read n"""
+val pfib = """read n; write n; int a := 5; int b := 13; if (a > 4) write b; if (b < 12) write a;"""
 
 def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	case Nil => println(calculateRexpElements(r))
@@ -293,9 +293,9 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 // calculator(WHILE_REGS, pfib.toList)
 
-println(parseSimp(WHILE_REGS, pfib.toList))
+// parseSimp(WHILE_REGS, pfib.toList)
 // println("________________________________")
-// println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+// parseSimpNoAssociativity(WHILE_REGS, pfib.toList)
 
 
 //------------------------------------
@@ -315,3 +315,24 @@ println(parseSimp(WHILE_REGS, pfib.toList))
 
 // val checker: Rexp = ("aaaaa" | "write" | "skip" | "read")
 // parseSimp(checker, "aaaaa".toList)
+
+//------------------------------------
+
+// val prog2 = """
+// i := 2;
+// max := 100;
+// while i < max do {
+//   isprime := 1;
+//   j := 2;
+//   while (j * j) <= i + 1  do {
+//     if i % j == 0 then isprime := 0  else skip;
+//     j := j + 1
+//   };
+//   if isprime == 1 then write i else skip;
+//   i := i + 1
+// }"""
+
+// for (i <- 1 to 100 by 1) {
+//   print(i.toString + ":  ")
+//   parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
+// }
