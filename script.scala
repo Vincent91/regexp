@@ -1,6 +1,61 @@
 import scala.language.implicitConversions    
 import scala.language.reflectiveCalls
 import scala.annotation.tailrec   
+
+// Custom Stack definition
+
+sealed trait EvalSpec[L, R, V]
+
+case class Constant[L, R, V](v: V) extends EvalSpec[L, R, V]
+
+case class Recurse[L, R, V](lst: L, rexpOld: R, rexpNew: R, f: V => EvalSpec[L, R, V]) extends EvalSpec[L, R, V]
+
+private sealed trait EvalStack[L, R, V]
+
+private case class ConstantFrame[L, R, V](constant: Constant[L, R, V], tail: Option[ContinueFrame[L, R, V]]) extends EvalStack[L, R, V]
+
+private case class RecurseFrame[L, R, V](recurse: Recurse[L, R, V], tail: Option[ContinueFrame[L, R, V]]) extends EvalStack[L, R, V]
+
+private case class ContinueFrame[L, R, V](f: V => EvalSpec[L, R, V], tail: Option[ContinueFrame[L, R, V]]) extends EvalStack[L, R, V]
+
+def evaluate[L, R, V](f: (L, R)  => EvalSpec[L, R, V])(l: L)(r: R) = {
+	println("list " + l);
+	println("rexp " + r);
+	@scala.annotation.tailrec
+	def process(stack: EvalStack[L, R, V]): V = {
+		stack match {
+			case ConstantFrame(Constant(c), None) => c
+			case ConstantFrame(Constant(c), Some(ContinueFrame(g, tail))) => process(makeStack(g(c), tail))
+			case RecurseFrame(Recurse(rlst, rold, rnew, rfunc), tail) => process(makeStack(f(rlst, rnew), Some(ContinueFrame(rfunc, tail))))
+		}
+	}
+
+	process(makeStack(f(l, r), None))
+}
+
+private def makeStack[L, R, V](top: EvalSpec[L, R, V], tail: Option[ContinueFrame[L, R, V]]): EvalStack[L, R, V] = 
+	top match {
+		case constant@Constant(_) => ConstantFrame(constant, tail)
+		case recurse@Recurse(_, _, _, _) => RecurseFrame(recurse, tail)
+	}
+
+implicit def toConst[L, R, V](v: V): Constant[L, R, V] = Constant[L, R, V](v)
+
+
+def g:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evaluate[List[Char], Rexp, Val] { 
+	case (Nil, r) => {
+		println(r);
+		if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException 
+	}
+	case (head::tail, r) => {
+		println(r);
+		val (rsimp, func) = simplify(der(r, head));
+		Recurse(tail, r, rsimp, inj(r, head, _: Val))
+	}
+} (_) (_)
+
+g("jopa".toList, WHILE_REGS)
+// Rexp definition
     
 abstract class Rexp 
 case object NULL extends Rexp
@@ -11,6 +66,8 @@ case class ALT(r1: Rexp, r2: Rexp) extends Rexp
 case class SEQ(r1: Rexp, r2: Rexp) extends Rexp 
 case class STAR(r: Rexp) extends Rexp 
 
+// Rexp length calculation
+
 def calculateRexpElements(r: Rexp): Int = r match {
 	case CHAR(_) => 1
 	case NULL => 1
@@ -19,6 +76,8 @@ def calculateRexpElements(r: Rexp): Int = r match {
 	case ALT(x, y) => 1 + calculateRexpElements(x) + calculateRexpElements(y)
 	case STAR(x) => 1 + calculateRexpElements(x)
 }
+
+// Val definition
 
 abstract class Val
 case object Void extends Val
@@ -312,21 +371,21 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-val prog2 = """
-i := 2;
-max := 100;
-while i < max do {
-  isprime := 1;
-  j := 2;
-  while (j * j) <= i + 1  do {
-    if i % j == 0 then isprime := 0  else skip;
-    j := j + 1
-  };
-  if isprime == 1 then write i else skip;
-  i := i + 1
-}"""
+// val prog2 = """
+// i := 2;
+// max := 100;
+// while i < max do {
+//   isprime := 1;
+//   j := 2;
+//   while (j * j) <= i + 1  do {
+//     if i % j == 0 then isprime := 0  else skip;
+//     j := j + 1
+//   };
+//   if isprime == 1 then write i else skip;
+//   i := i + 1
+// }"""
 
-for (i <- 1 to 100 by 1) {
-  print(i.toString + ":  ")
-  parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
-}
+// for (i <- 1 to 100 by 1) {
+//   print(i.toString + ":  ")
+//   parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
+// }
