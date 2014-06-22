@@ -6,9 +6,11 @@ import scala.annotation.tailrec
 
 sealed trait EvalSpec[L, R, V]
 
-case class Constant[L, R, V](v: V) extends EvalSpec[L, R, V]
+case class Constant[L, R, V](v: V) extends EvalSpec[L, R, V] {
+	override def toString = v.toString
+}
 
-case class Recurse[L, R, V](lst: L, rexpOld: R, rexpNew: R, f: V => EvalSpec[L, R, V]) extends EvalSpec[L, R, V]
+case class Recurse[L, R, V](lst: L, rexpFunc: V => V, rexpNew: R, f: V => EvalSpec[L, R, V]) extends EvalSpec[L, R, V]
 
 private sealed trait EvalStack[L, R, V]
 
@@ -19,14 +21,13 @@ private case class RecurseFrame[L, R, V](recurse: Recurse[L, R, V], tail: Option
 private case class ContinueFrame[L, R, V](f: V => EvalSpec[L, R, V], tail: Option[ContinueFrame[L, R, V]]) extends EvalStack[L, R, V]
 
 def evaluate[L, R, V](f: (L, R)  => EvalSpec[L, R, V])(l: L)(r: R) = {
-	println("list " + l);
-	println("rexp " + r);
 	@scala.annotation.tailrec
 	def process(stack: EvalStack[L, R, V]): V = {
 		stack match {
 			case ConstantFrame(Constant(c), None) => c
 			case ConstantFrame(Constant(c), Some(ContinueFrame(g, tail))) => process(makeStack(g(c), tail))
-			case RecurseFrame(Recurse(rlst, rold, rnew, rfunc), tail) => process(makeStack(f(rlst, rnew), Some(ContinueFrame(rfunc, tail))))
+			case RecurseFrame(Recurse(rlst, rfunc, rnew, rinj), tail) => process(makeStack(f(rlst, rnew), 
+				Some(ContinueFrame(rinj, tail))))
 		}
 	}
 
@@ -42,19 +43,17 @@ private def makeStack[L, R, V](top: EvalSpec[L, R, V], tail: Option[ContinueFram
 implicit def toConst[L, R, V](v: V): Constant[L, R, V] = Constant[L, R, V](v)
 
 
-def g:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evaluate[List[Char], Rexp, Val] { 
-	case (Nil, r) => {
-		println(r);
-		if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException 
-	}
+def parseSimpStack:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evaluate[List[Char], Rexp, Val] { 
+	case (Nil, r) => if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException 
 	case (head::tail, r) => {
-		println(r);
 		val (rsimp, func) = simplify(der(r, head));
-		Recurse(tail, r, rsimp, inj(r, head, _: Val))
+		Recurse(tail, func, rsimp, injHelper(r, head, _: Val, func))
 	}
 } (_) (_)
 
-g("jopa".toList, WHILE_REGS)
+def injHelper(r: Rexp, c: Char, vOld: Val, vReverse: Val => Val): EvalSpec[List[Char], Rexp, Val] = {
+	Constant(inj(r, c, vReverse(vOld)))
+}
 // Rexp definition
     
 abstract class Rexp 
@@ -334,7 +333,8 @@ val END: Rexp = "}"
 val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 // Some Tests
 
-val pfib = """read n; write n; int a := 5; int b := 13; if (a > 4) write b; if (b < 12) write a;"""
+val pfib = """read n"""
+val pfib2 = """read n; write n; int a := 5; int b := 13; if (a > 4) write b; if (b < 12) write a;"""
 
 def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	case Nil => println(calculateRexpElements(r))
@@ -346,10 +346,10 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 // calculator(WHILE_REGS, pfib.toList)
 
-// parseSimp(WHILE_REGS, pfib.toList)
+// println(parseSimp(WHILE_REGS, pfib.toList))
 // println("________________________________")
+// println(g(pfib.toList, WHILE_REGS))
 // parseSimpNoAssociativity(WHILE_REGS, pfib.toList)
-
 
 //------------------------------------
 
@@ -371,21 +371,21 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-// val prog2 = """
-// i := 2;
-// max := 100;
-// while i < max do {
-//   isprime := 1;
-//   j := 2;
-//   while (j * j) <= i + 1  do {
-//     if i % j == 0 then isprime := 0  else skip;
-//     j := j + 1
-//   };
-//   if isprime == 1 then write i else skip;
-//   i := i + 1
-// }"""
+val prog2 = """
+i := 2;
+max := 100;
+while i < max do {
+  isprime := 1;
+  j := 2;
+  while (j * j) <= i + 1  do {
+    if i % j == 0 then isprime := 0  else skip;
+    j := j + 1
+  };
+  if isprime == 1 then write i else skip;
+  i := i + 1
+}"""
 
-// for (i <- 1 to 100 by 1) {
-//   print(i.toString + ":  ")
-//   parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)
-// }
+for (i <- 1 to 100 by 1) {
+  print(i.toString + ":  ")
+  parseSimpStack((prog2 * i).toList, WHILE_REGS)
+}
