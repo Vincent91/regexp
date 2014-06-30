@@ -203,18 +203,19 @@ def altFinder(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
 
 
 // altFinder with Rec
-def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
+def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = { 
+	seq match {
 	case ALT(left, right) => (r, left) match {
 		case (RECD(_, r1), RECD(_, r2)) => {
 			if (r1 == r2) (right, step, false)
 			else { 
 				right match {
 					case RECD(str, r3) => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step)
 						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
 					}
 					case r3 => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step + 1)
 						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
 					}
 				}
@@ -225,11 +226,11 @@ def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq matc
 			else {
 				right match {
 					case RECD(str, r3) => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step)
 						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
 					}
 					case r3 => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step + 1)
 						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
 					}
 				}
@@ -240,11 +241,11 @@ def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq matc
 			else {
 				right match {
 					case RECD(str, r3) => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step)
 						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
 					}
 					case r3 => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step + 1)
 						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
 					}
 				} 
@@ -255,16 +256,20 @@ def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq matc
 			else {
 				right match {
 					case RECD(str, r3) => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step)
 						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
 					}
 					case r3 => {
-						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						val (rn, step1, flag) = altFinderRec(r, r3, step + 1)
 						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
 					}
 				}
 			}
 		}
+	}
+	case RECD(str, r1) if step == 1 => {
+		val (rn, step1, flag) = altFinderRec(r, r1, step)
+		(if (rn == DUMMY) r else ALT(r, RECD(str, rn)), step1, flag)
 	}
 	case reg => (r, reg) match {
 		case (RECD(_, r1), r2) => {
@@ -276,6 +281,7 @@ def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq matc
 				else  (reg, -1, false)
 		}
 	}
+}
 }
 
 
@@ -408,7 +414,8 @@ def parseSimp(r: Rexp, s: List[Char]): Val = {
 	s match {
 		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
 		case head::tail => {
-			val (rd, funct) = simplify(der(r, head))
+			val dr = der(r, head)
+			val (rd, funct) = simplify(dr)
 			inj(r, head, funct(parseSimp(rd, tail)))
 		}
 	}
@@ -463,10 +470,10 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 // calculator(WHILE_REGS, pfib2.toList)
 
-// parseSimp(WHILE_REGS, pfib.toList)
+// println(parseSimp(WHILE_REGS, pfib2.toList))
 // println("________________________________")
 // println(g(pfib.toList, WHILE_REGS))
-// parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
+// println(parseSimpNoAssociativity(WHILE_REGS, pfib2.toList) == parseSimpNoAssociativity(WHILE_REGS, pfib2.toList))
 
 //------------------------------------
 
@@ -479,8 +486,10 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-val checker: Rexp = ("global" $ (("a1" $ "aa") | ("a2" $ "aa") | ("b" $ "re") | ("w" $ " "))).%
-parseSimp(checker, "aa re".toList)
+// val checker: Rexp = (("a1" $ "a") | ("b" $ "re") | ("w" $ " ")).%
+// println(checker)
+// parseSimp(checker, "a re".toList)
+
 
 //------------------------------------
 
