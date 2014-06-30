@@ -181,10 +181,10 @@ def simp(r: Rexp): (Rexp, Val => Val) = r match {
       case _ => (SEQ(r1s,r2s), F_SEQ(f1s, f2s))
     }
   }
-  // case RECD(x, r1) => {
-  //   val (r1s, f1s) = simp(r1)
-  //   (RECD(x, r1s), F_RECD(f1s))
-  // }
+  case RECD(x, r1) => {
+    val (r1s, f1s) = simp(r1)
+    (RECD(x, r1s), F_RECD(f1s))
+  }
   case r => (r, F_ID)
 }
 
@@ -262,6 +262,12 @@ val WHILE_REGS2 = (KEYWORD |
 
 //val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 
+val SEQUENCE_CHOICE: Rexp = "bbbb" | "abbb" | "aabb" | "aaab"
+
+val SIMPLE_REGS = ("k" $ SEQUENCE_CHOICE)
+
+val atata = "abbb"
+println(lexing_simp(SIMPLE_REGS, atata))
 // Some Tests
 //============
 
@@ -279,26 +285,26 @@ def time[T](code: => T) = {
 // val prog1 = """read  n; write (n)"""
 // env (lexing_simp(WHILE_REGS, prog1))
 
-val prog2 = """
-i := 2;
-max := 100;
-while i < max do {
-  isprime := 1;
-  j := 2;
-  while (j * j) <= i + 1  do {
-    if i % j == 0 then isprime := 0  else skip;
-    j := j + 1
-  };
-  if isprime == 1 then write i else skip;
-  i := i + 1
-}"""
+// val prog2 = """
+// i := 2;
+// max := 100;
+// while i < max do {
+//   isprime := 1;
+//   j := 2;
+//   while (j * j) <= i + 1  do {
+//     if i % j == 0 then isprime := 0  else skip;
+//     j := j + 1
+//   };
+//   if isprime == 1 then write i else skip;
+//   i := i + 1
+// }"""
 // lexing_acc(WHILE_REGS, prog2)
 
 
-for (i <- 1 to 200 by 1) {
-  print(i.toString + ":  ")
-  time(lexing_acc(WHILE_REGS, prog2 * i))
-}
+// for (i <- 1 to 200 by 1) {
+//   print(i.toString + ":  ")
+//   time(lexing_acc(WHILE_REGS, prog2 * i))
+// }
 /*
 for (i <- 1 to 100 by 10) {
   print(i.toString + ":  ")

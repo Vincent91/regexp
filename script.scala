@@ -64,6 +64,7 @@ case class CHAR(c: Char) extends Rexp
 case class ALT(r1: Rexp, r2: Rexp) extends Rexp 
 case class SEQ(r1: Rexp, r2: Rexp) extends Rexp 
 case class STAR(r: Rexp) extends Rexp 
+case class RECD(x: String, r: Rexp) extends Rexp
 
 // Rexp length calculation
 
@@ -74,6 +75,7 @@ def calculateRexpElements(r: Rexp): Int = r match {
 	case SEQ(x, y) => 1 + calculateRexpElements(x) + calculateRexpElements(y)
 	case ALT(x, y) => 1 + calculateRexpElements(x) + calculateRexpElements(y)
 	case STAR(x) => 1 + calculateRexpElements(x)
+	case RECD(_, x) => 1 + calculateRexpElements(x)
 }
 
 // Val definition
@@ -85,6 +87,7 @@ case class Seqv(v1: Val, v2: Val) extends Val
 case class Left(v: Val) extends Val
 case class Right(v: Val) extends Val
 case class Stars(l: List[Val]) extends Val
+case class Rec(x: String, v: Val) extends Val
 
 def charlist2Rexp(s: List[Char]): Rexp = s match {
 	case Nil => EMPTY
@@ -105,7 +108,8 @@ implicit def stringOps(s: String) = new {
 	def | (r: String) = ALT(s, r)
 	def % = STAR(s)
 	def ~ (r: Rexp) = SEQ(s, r)
-	def ~ (r: String) = SEQ(s, r)	
+	def ~ (r: String) = SEQ(s, r)
+	def $ (r: Rexp) = RECD(s, r)	
 }
 
 def nullable(r: Rexp): Boolean = r match {
@@ -115,6 +119,7 @@ def nullable(r: Rexp): Boolean = r match {
 	case ALT(v1, v2) => nullable(v1) || nullable(v2)
 	case SEQ(v1, v2) => nullable(v1) && nullable(v2)
 	case STAR(_) => true
+	case RECD(_, v) => nullable(v)
 }
 
 def der(r: Rexp, c: Char): Rexp = r match {
@@ -126,6 +131,7 @@ def der(r: Rexp, c: Char): Rexp = r match {
 		if (nullable(v1)) ALT(SEQ(der(v1, c), v2), der(v2, c)) 
 		else SEQ(der(v1, c), v2)
 	case STAR(v) => SEQ(der(v, c), STAR(v))
+	case RECD(_, v) => der(v, c)
 }
 
 def ders(r: Rexp, s: List[Char]): Rexp = s match {
@@ -140,6 +146,17 @@ def flat(v: Val): String = v match {
 	case Right(v) => flat(v)
 	case Seqv(v1, v2) => flat(v1) + flat(v2)
 	case Stars(lst) => lst.map(flat).mkString 
+	case Rec(_, v) => flat(v)
+}
+
+def env(v: Val): List[(String, String)] = v match {
+	case Void => Nil
+	case Chr(c) => Nil
+	case Left(v) => env(v)
+	case Right(v) => env(v)
+	case Seqv(v1, v2) => env(v1) ::: env(v2)
+	case Stars(lst) => lst.flatMap(env)
+	case Rec(s, v) => (s, flat(v)) :: env(v)
 }
 
 def mkEps(r: Rexp): Val = r match {
@@ -149,6 +166,7 @@ def mkEps(r: Rexp): Val = r match {
 		else Right(mkEps(v2))
 	case SEQ(v1, v2) => Seqv(mkEps(v1), mkEps(v2))
 	case STAR(r) => Stars(Nil)
+	case RECD(s, v) => Rec(s, mkEps(v))
 }
 
 def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
@@ -159,6 +177,7 @@ def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
 	case (ALT(r1, r2), Left(v1)) => Left(inj(r1, c, v1))
 	case (ALT(r1, r2), Right(v2)) => Right(inj(r2, c, v2))
 	case (CHAR(d), Void) => Chr(d)
+	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
 }
 
 def matcher(r: Rexp, s: String): Boolean = nullable(ders(r, s.toList))
@@ -168,6 +187,8 @@ def parse(r: Rexp, s: List[Char]): Val = s match {
 	case head::tail => inj(r, head, parse(der(r, head), tail))
 } 
 
+
+// altFinder without RECD
 def altFinder(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
 	case ALT(left, right) => {
 		if (r == left) (right, step, false)
@@ -181,6 +202,83 @@ def altFinder(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
 }
 
 
+// altFinder with Rec
+def altFinderRec(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
+	case ALT(left, right) => (r, left) match {
+		case (RECD(_, r1), RECD(_, r2)) => {
+			if (r1 == r2) (right, step, false)
+			else { 
+				right match {
+					case RECD(str, r3) => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
+					}
+					case r3 => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
+					}
+				}
+			}
+		}
+		case (RECD(_, r1), r2) => {
+			if (r1 == r2) (right, step, false)
+			else {
+				right match {
+					case RECD(str, r3) => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
+					}
+					case r3 => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
+					}
+				}
+			}
+		}
+		case (r1, RECD(_, r2)) => {
+			if (r1 == r2) (right, step, false)
+			else {
+				right match {
+					case RECD(str, r3) => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
+					}
+					case r3 => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
+					}
+				} 
+			}
+		}
+		case (r1, r2) => {
+			if (r1 == r2) (right, step, false)
+			else {
+				right match {
+					case RECD(str, r3) => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step  + 1)
+						(if (rn == DUMMY) left else ALT(left, RECD(str, rn)), step1, flag)
+					}
+					case r3 => {
+						val (rn, step1, flag) = altFinderRec(r3, right, step + 1)
+						(if (rn == DUMMY) left else ALT(left, rn), step1, flag)	
+					}
+				}
+			}
+		}
+	}
+	case reg => (r, reg) match {
+		case (RECD(_, r1), r2) => {
+			if (r1 == r2) (DUMMY, step, true)
+				else  (reg, -1, false)
+		}
+		case (r1, r2) => {
+			if (r1 == r2) (DUMMY, step, true)
+				else  (reg, -1, false)
+		}
+	}
+}
+
+
 // complex simplification with associativity changes and reduction of alt-sequences
 def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 	case ALT(ALT(x, y), z) => {
@@ -190,7 +288,7 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 	case ALT(x, y) => {
 		y match {
 			case ALT(_, _) => {
-				val (reg, steps, flag) = altFinder(x, y, 1);
+				val (reg, steps, flag) = altFinderRec(x, y, 1);
 				if (steps == -1) {
 					val (x1, f1) = simplify(x)
 					val (y1, f2) = simplify(y)
@@ -232,6 +330,10 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 			case (z1, z2) => (SEQ(z1, z2), seqvPartial(_: Val, f1, f2))
 		}
 	}
+	case RECD(s, x) => {
+		val (x1, f1) = simplify(x)
+		(RECD(s, x1), recFunction(_: Val, f1))
+	}
 	case reg => (reg, (v: Val) => v)
 }
 
@@ -257,9 +359,16 @@ def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 			case _ => (SEQ(x1, y1), seqvPartial(_: Val, f1, f2))
 		}
 	} 
+	case RECD(s, x) => {
+		val (x1, f1) = simplifyWithoutAssociativity(x)
+		(RECD(s, x1), recFunction(_: Val, f1))
+	}
 	case reg => (reg, (v: Val) => v)
 }
 
+def recFunction(v: Val, f: Val => Val): Val = v match {
+	case Rec(s, v) => Rec(s, f(v))
+}
 
 def seqvEmptyLeftPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = Seqv(f1(Void), f2(v))
 
@@ -330,11 +439,19 @@ val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
 
-val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
+
+val WHILE_REGS = (("k" $ KEYWORD) | 
+                  ("i" $ ID) | 
+                  ("o" $ OP) | 
+                  ("n" $ NUM) | 
+                  ("s" $ SEMI) | 
+                  ("p" $ (LPAREN | RPAREN)) | 
+                  ("b" $ (BEGIN | END)) | 
+                  ("w" $ WHITESPACE)).%
 // Some Tests
 
 val pfib = """read n"""
-val pfib2 = """read n; write n; int a := 5; int b := 13; if (a > 4) write b; if (b < 12) write a;"""
+val pfib2 = """read n; write n; int a := 5;"""
 
 def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	case Nil => println(calculateRexpElements(r))
@@ -344,12 +461,12 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-// calculator(WHILE_REGS, pfib.toList)
+// calculator(WHILE_REGS, pfib2.toList)
 
-// println(parseSimp(WHILE_REGS, pfib.toList))
+// parseSimp(WHILE_REGS, pfib.toList)
 // println("________________________________")
 // println(g(pfib.toList, WHILE_REGS))
-// parseSimpNoAssociativity(WHILE_REGS, pfib.toList)
+// parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
 
 //------------------------------------
 
@@ -360,32 +477,42 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 //------------------------------------
 
-// val altFinderRexp = ("aaaaa" | ("bb" | "ccccc"))
-// val (rn, sn, fn ) = altFinder("ccccc", altFinderRexp, 0)
-// println(rn)
+//------------------------------------
+
+val checker: Rexp = ("global" $ (("a1" $ "aa") | ("a2" $ "aa") | ("b" $ "re") | ("w" $ " "))).%
+parseSimp(checker, "aa re".toList)
 
 //------------------------------------
 
-// val checker: Rexp = ("aaaaa" | "write" | "skip" | "read")
-// parseSimp(checker, "aaaaa".toList)
-
-//------------------------------------
-
-val prog2 = """
-i := 2;
-max := 100;
-while i < max do {
-  isprime := 1;
-  j := 2;
-  while (j * j) <= i + 1  do {
-    if i % j == 0 then isprime := 0  else skip;
-    j := j + 1
-  };
-  if isprime == 1 then write i else skip;
-  i := i + 1
-}"""
-
-for (i <- 1 to 100 by 1) {
-  print(i.toString + ":  ")
-  parseSimpStack((prog2 * i).toList, WHILE_REGS)
+def time[T](code: => T) = {
+  val start = System.nanoTime()
+  val result = code
+  val end = System.nanoTime()
+  println((end - start)/1.0e9)
+  result
 }
+
+// val prog2 = """
+// i := 2;
+// max := 100;
+// while i < max do {
+//   isprime := 1;
+//   j := 2;
+//   while (j * j) <= i + 1  do {
+//     if i % j == 0 then isprime := 0  else skip;
+//     j := j + 1
+//   };
+//   if isprime == 1 then write i else skip;
+//   i := i + 1
+// }"""
+
+// for (i <- 500 to 500 by 1) {
+//   print(i.toString + ":  ")
+//   parseSimpStack((prog2 * i).toList, WHILE_REGS)
+// }
+
+
+// for (i <- 1 to 50 by 1) {
+//   time(parseSimp(WHILE_REGS, (prog2 * i).toList))
+// }
+
