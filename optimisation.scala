@@ -84,8 +84,8 @@ abstract class Val
 case object Void extends Val
 case class Chr(c: Char) extends Val
 case class Seqv(v1: Val, v2: Val) extends Val
-case class Left(v: Val) extends Val
-case class Right(v: Val) extends Val
+case class Left(v: Val, c: Int) extends Val
+case class Right(v: Val, c: Int) extends Val
 case class Stars(l: List[Val]) extends Val
 case class Rec(x: String, v: Val) extends Val
 
@@ -142,8 +142,8 @@ def ders(r: Rexp, s: List[Char]): Rexp = s match {
 def flat(v: Val): String = v match {
 	case Void => ""
 	case Chr(c) => c.toString
-	case Left(v) => flat(v)
-	case Right(v) => flat(v)
+	case Left(v, _) => flat(v)
+	case Right(v, _) => flat(v)
 	case Seqv(v1, v2) => flat(v1) + flat(v2)
 	case Stars(lst) => lst.map(flat).mkString 
 	case Rec(_, v) => flat(v)
@@ -152,30 +152,96 @@ def flat(v: Val): String = v match {
 def env(v: Val): List[(String, String)] = v match {
 	case Void => Nil
 	case Chr(c) => Nil
-	case Left(v) => env(v)
-	case Right(v) => env(v)
+	case Left(v, _) => env(v)
+	case Right(v, _) => env(v)
 	case Seqv(v1, v2) => env(v1) ::: env(v2)
 	case Stars(lst) => lst.flatMap(env)
 	case Rec(s, v) => (s, flat(v)) :: env(v)
 }
 
-def mkEps(r: Rexp): Val = r match {
-	case EMPTY => Void
-	case ALT(v1, v2) => 
-		if (nullable(v1)) Left(mkEps(v1))
-		else Right(mkEps(v2))
-	case SEQ(v1, v2) => Seqv(mkEps(v1), mkEps(v2))
-	case STAR(r) => Stars(Nil)
-	case RECD(s, v) => Rec(s, mkEps(v))
+def mkEps(r: Rexp, left: Int = 0, right: Int = 0): Val = r match {
+	case EMPTY => {
+		if (left != 0) 
+			Left(Void, left)
+		else if (right != 0)
+			Right(Void, right)
+		else 
+			Void
+	}
+	case ALT(v1, v2) => {
+		if (nullable(v1)) {
+			if (right != 0)
+				Right(mkEps(v1, 1, 0), right)
+			else
+				mkEps(v1, left + 1, 0)
+		} else { 
+			if (left != 0)
+				Left(mkEps(v2, 0, 1), left)
+			else 
+				mkEps(v2, 0, right + 1)
+		}
+	}
+	case SEQ(v1, v2) => {
+		if (left != 0)
+			Left(Seqv(mkEps(v1), mkEps(v2)), left)
+		else if (right != 0)
+			Right(Seqv(mkEps(v1), mkEps(v2)), right)
+		else
+			Seqv(mkEps(v1), mkEps(v2))
+	}
+	case STAR(r) => {
+		if (left != 0)
+			Left(Stars(Nil), left)
+		else if (right != 0)
+			Right(Stars(Nil), right)
+		else 
+			Stars(Nil)
+	}
+	case RECD(s, v) => { 
+		if (left != 0) 
+			Left(Rec(s, mkEps(v)), left)
+		else if (right != 0)
+			Right(Rec(s, mkEps(v)), right)
+		else 
+			Rec(s, mkEps(v))
+	}
 }
 
-def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
+//mind-blowing
+def inj(r: Rexp, c: Char, v: Val, left: Int = 0, right: Int = 0): Val = (r, v) match {
 	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
 	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Left(Seqv(v1, v2))) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Right(v2)) => Seqv(mkEps(r1), inj(r2, c, v2))
-	case (ALT(r1, r2), Left(v1)) => Left(inj(r1, c, v1))
-	case (ALT(r1, r2), Right(v2)) => Right(inj(r2, c, v2))
+	case (SEQ(r1, r2), Left(Seqv(v1, v2), counter)) if left == counter - 1 => { 
+		if (left == 0)
+			Seqv(inj(r1, c, v1), v2)
+		else 
+			Left(Seqv(inj(r1, c, v1), v2), left)
+	}
+	case (SEQ(r1, r2), Right(v2, counter)) => {
+		if (right == 0) {
+			if (counter == 1)
+				Seqv(mkEps(r1), inj(r2, c, v2))
+			else 
+				Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - 1)))
+		} else {
+			if (right == counter - 1)
+				Right(Seqv(mkEps(r1), inj(r2, c, v2)), right)
+			else 
+				Right(Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - right - 1))), right)
+		}
+	}
+	case (ALT(r1, r2), Left(v1, counter)) => {
+		if (left == counter - 1)
+			Left(inj(r1, c, v1), counter)
+		else
+			inj(r1, c, Left(v1, counter), left + 1, 0)
+	}
+	case (ALT(r1, r2), Right(v2, counter)) => {
+		if (right == counter - 1)
+			Right(inj(r2, c, v2), counter)
+		else
+			inj(r2, c, Right(v2, counter), 0, right + 1)
+	}
 	case (CHAR(d), Void) => Chr(d)
 	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
 }
@@ -299,9 +365,9 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 					val (x1, f1) = simplify(x)
 					val (y1, f2) = simplify(y)
 					(x1, y1) match {
-						case (NULL, z) => (z, (v: Val) => Right(f2(v)))
-						case (z, NULL) => (z, (v: Val) => Left(f1(v)))
-						case (z1, z2) => if (z1 == z2) (z1, (v: Val) => Left(f1(v))) 
+						case (NULL, _) => (y1, addRight(_: Val, f2))
+						case (_, NULL) => (x1, addLeft(_: Val, f1))
+						case (z1, z2) => if (z1 == z2) (z1, addLeft(_: Val, f1))  
 							else (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
 					}
 				} else { 
@@ -317,9 +383,9 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 				val (x1, f1) = simplify(x)
 				val (y1, f2) = simplify(y)
 				(x1, y1) match {
-					case (NULL, z) => (z, (v: Val) => Right(f2(v)))
-					case (z, NULL) => (z, (v: Val) => Left(f1(v)))
-					case (z1, z2) => if (z1 == z2) (z1, (v: Val) => Left(f1(v))) 
+					case (NULL, _) => (y1, addRight(_: Val, f2))
+					case (_, NULL) => (x1, addLeft(_: Val, f1))
+					case (z1, z2) => if (z1 == z2) (z1, addLeft(_: Val, f1))  
 						else (ALT(z1, z2), alternativeValPartial(_: Val, f1, f2))
 				}
 			}
@@ -343,14 +409,24 @@ def simplify(r: Rexp): (Rexp, Val => Val) = r match {
 	case reg => (reg, (v: Val) => v)
 }
 
+def addRight(v: Val, f: Val => Val): Val = f(v) match {
+	case Right(v1, counter) => Right(v1, counter + 1)
+	case v1 => Right(v1, 1)
+}
+
+def addLeft(v: Val, f: Val => Val): Val = f(v) match {
+	case Left(v1, counter) => Left(v1, counter + 1)
+	case v1 => Left(v1, 1)
+}
+
 def simplifyWithoutAssociativity(r: Rexp): (Rexp, Val => Val) = r match {
 	case ALT(x, y) => {
 		val (x1, f1) = simplifyWithoutAssociativity(x)
 		val (y1, f2) = simplifyWithoutAssociativity(y)
 		(x1, y1) match {
-			case (NULL, _) => (y1, (v: Val) => Right(f2(v)))
-			case (_, NULL) => (x1, (v: Val) => Left(f1(v)))
-			case _ => if (x1 == y1) (x1, (v: Val) => Left(f1(v))) 
+			case (NULL, _) => (y1, addRight(_: Val, f2))
+			case (_, NULL) => (x1, addLeft(_: Val, f1))
+			case _ => if (x1 == y1) (x1, addLeft(_: Val, f1)) 
 				else (ALT(x1, y1), alternativeValPartial(_: Val, f1, f2))
 		}
 	}
@@ -381,8 +457,32 @@ def seqvEmptyLeftPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = Seqv(f1(
 def seqvEmptyRightPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = Seqv(f1(v), f2(Void))
 
 def alternativeValPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = v match {
-	case Left(x) => Left(f1(x))
-	case Right(x) => Right(f2(x))
+	case Left(x, counter) => {
+		if (counter == 1) {
+			f1(x) match {
+				case Left(v1, counter1) => Left(v1, counter1 + 1)
+				case v1 => Left(v1, 1)
+			}
+		} else {
+			f1(Left(x, counter - 1)) match {
+				case Left(v1, counter1) => Left(v1, counter1 + 1)
+				case v1 => Left(v1, 1)
+			}
+		}		
+	}
+	case Right(x, counter) => {
+		if (counter == 1) {
+			f2(x) match {
+				case Right(v1, counter1) => Right(v1, counter1 + 1)
+				case v1 => Right(v1, 1)
+			}
+		} else {
+			f1(Right(x, counter - 1)) match {
+				case Right(v1, counter1) => Right(v1, counter1 + 1)
+				case v1 => Right(v1, 1)
+			}
+		}		
+	}
 	case _ => throw new IllegalArgumentException
 }
 
@@ -392,22 +492,45 @@ def seqvPartial(v: Val, f1: Val => Val, f2: Val => Val): Val = v match {
 }
 
 def associativityFunction(v: Val, f: Val => Val) : Val = f(v) match {
-	case Left(v1) => Left(Left(v1))
-	case Right(Left(v2)) => Left(Right(v2))
-	case Right(Right(v3)) => Right(v3)
-}
-
-def middleFunction(v: Val, steps: Int, f: Val => Val): Val = adder(f(v), steps, (v1: Val) => Right(v1))
-
-def endFunction(v: Val, steps: Int, f: Val => Val): Val = adder(f(v), steps - 1, (v1: Val) => Left(v1))
-
-def adder(v: Val, steps: Int, f: Val => Val): Val = {
-	if (steps == 0) f(v)
-	else v match {
-		case Right(x) => Right(adder(x, steps - 1, f))
-		case v1 => v1
+	case Left(v1, counter) => Left(v1, counter + 1)
+	case Right(Left(v2, counter), 1) => {
+		if (counter > 1)
+			Left(Right(Left(v2, counter - 1), 1), 1)
+		else
+			v2 match {
+				case Right(v3, counter1) => Left(Right(v3, counter1 + 1) , 1)
+				case _ => Left(Right(v2, 1), 1)
+			}
 	}
+	case Right(v3, counter) if counter > 1 => Right(v3, counter - 1)
 }
+
+def middleFunction(v: Val, steps: Int, f: Val => Val): Val = f(v) match {
+	case Right(v1, counter) if counter >= steps => Right(v1, counter + 1)
+	case v1 => v1
+}
+
+def endFunction(v: Val, steps: Int, f: Val => Val): Val = f(v) match {
+	case Right(v1, counter) if counter >= steps - 1 => {
+		if (counter == steps - 1) {
+			v1 match {
+				case Left(v2, counter1) => Right(Left(v2, counter1 + 1), counter)
+				case _ => Right(Left(v1, 1), counter)
+			}
+		} else {
+			Right(Left(Right(v1, counter - (steps - 1)), 1), steps - 1)
+		}
+	}
+	case v1 => v1	
+}
+
+// def adder(v: Val, steps: Int, f: Val => Val): Val = {
+// 	if (steps == 0) f(v)
+// 	else v match {
+// 		case Right(x) => Right(adder(x, steps - 1, f))
+// 		case v1 => v1
+// 	}
+// }
 
 def parseSimp(r: Rexp, s: List[Char]): Val = {
 	// println(calculateRexpElements(r));
@@ -423,11 +546,23 @@ def parseSimp(r: Rexp, s: List[Char]): Val = {
 
 def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 	// println(calculateRexpElements(r));
+	// println("rexp " + r)
 	s match {
-		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+		case Nil => {
+			if (nullable(r)) { 
+				val vl = mkEps(r)
+				// println("val " + vl)
+				vl 
+			} else 
+				throw new IllegalArgumentException
+		} 
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
-			inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
+			val vl = funct(parseSimpNoAssociativity(rd, tail))
+			// println("val " + vl)
+			val vl2 = inj(r, head, vl)
+			// println("val after inj " + vl2)
+			vl2
 		}
 	}
 }
@@ -453,7 +588,7 @@ val WHILE_REGS = (("k" $ KEYWORD) |
                   ("n" $ NUM) | 
                   ("s" $ SEMI) | 
                   ("p" $ (LPAREN | RPAREN)) | 
-                  ("b" $ (BEGIN | END)) | 
+                  // ("b" $ (BEGIN | END)) | 
                   ("w" $ WHITESPACE)).%
 // Some Tests
 
@@ -467,6 +602,8 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 		calculator(der(r, head), tail)
 	}
 }
+
+val rega: Rexp = ("k" $ KEYWORD | ("w" $ WHITESPACE) | ("i" $ ID)).%
 
 println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
 
@@ -483,7 +620,6 @@ println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
 // val stroka = "aebdc"
 
 // println(parseSimpNoAssociativity(regularka, stroka.toList))
-
 
 //------------------------------------
 
