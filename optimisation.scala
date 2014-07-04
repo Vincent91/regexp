@@ -211,36 +211,48 @@ def mkEps(r: Rexp, left: Int = 0, right: Int = 0): Val = r match {
 def inj(r: Rexp, c: Char, v: Val, left: Int = 0, right: Int = 0): Val = (r, v) match {
 	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
 	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Left(Seqv(v1, v2), counter)) if left == counter - 1 => { 
-		if (left == 0)
-			Seqv(inj(r1, c, v1), v2)
-		else 
-			Left(Seqv(inj(r1, c, v1), v2), left)
+	case (SEQ(r1, r2), Left(Seqv(v1, v2), 1)) /*if left == counter - 1*/ => {
+		Seqv(inj(r1, c, v1), v2)
+		// if (left == 0)
+		// 	Seqv(inj(r1, c, v1), v2)
+		// else 
+		// 	Left(Seqv(inj(r1, c, v1), v2), left)
 	}
 	case (SEQ(r1, r2), Right(v2, counter)) => {
-		if (right == 0) {
-			if (counter == 1)
-				Seqv(mkEps(r1), inj(r2, c, v2))
-			else 
-				Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - 1)))
-		} else {
-			if (right == counter - 1)
-				Right(Seqv(mkEps(r1), inj(r2, c, v2)), right)
-			else 
-				Right(Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - right - 1))), right)
-		}
+		Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1)))
+		// if (right == 0) {
+		// 	if (counter == 1)
+		// 		Seqv(mkEps(r1), inj(r2, c, v2))
+		// 	else 
+		// 		Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - 1)))
+		// } else {
+		// 	if (right == counter - 1)
+		// 		Right(Seqv(mkEps(r1), inj(r2, c, v2)), right)
+		// 	else 
+		// 		Right(Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - right - 1))), right)
+		// }
 	}
 	case (ALT(r1, r2), Left(v1, counter)) => {
-		if (left == counter - 1)
-			Left(inj(r1, c, v1), counter)
-		else
-			inj(r1, c, Left(v1, counter), left + 1, 0)
+		val vl = inj(r1, c, if (counter == 1) v1 else Left(v1, counter - 1))
+		vl match {
+			case Left(vr, counter1) => Left(vr, counter1 + 1)
+			case vr => Left(vr, 1)
+		}
+		// if (left == counter - 1)
+		// 	Left(inj(r1, c, v1), counter)
+		// else
+		// 	inj(r1, c, Left(v1, counter), left + 1, 0)
 	}
 	case (ALT(r1, r2), Right(v2, counter)) => {
-		if (right == counter - 1)
-			Right(inj(r2, c, v2), counter)
-		else
-			inj(r2, c, Right(v2, counter), 0, right + 1)
+		val vl = inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1))
+		vl match {
+			case Right(vr, counter1) => Right(vr, counter1 + 1)
+			case vr => Right(vr, 1)
+		}
+		// if (right == counter - 1)
+		// 	Right(inj(r2, c, v2), counter)
+		// else
+		// 	inj(r2, c, Right(v2, counter), 0, right + 1)
 	}
 	case (CHAR(d), Void) => Chr(d)
 	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
@@ -588,7 +600,7 @@ val WHILE_REGS = (("k" $ KEYWORD) |
                   ("n" $ NUM) | 
                   ("s" $ SEMI) | 
                   ("p" $ (LPAREN | RPAREN)) | 
-                  // ("b" $ (BEGIN | END)) | 
+                  ("b" $ (BEGIN | END)) | 
                   ("w" $ WHITESPACE)).%
 // Some Tests
 
