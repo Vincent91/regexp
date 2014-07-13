@@ -266,8 +266,8 @@ val SEQUENCE_CHOICE: Rexp = "bbbb" | "abbb" | "aabb" | "aaab"
 
 val SIMPLE_REGS = ("k" $ SEQUENCE_CHOICE)
 
-val atata = "abbb"
-println(lexing_simp(SIMPLE_REGS, atata))
+val atata = "r"
+println(lexing_simp(WHILE_REGS, atata))
 // Some Tests
 //============
 

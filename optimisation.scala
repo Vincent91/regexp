@@ -52,7 +52,7 @@ def parseSimpStack:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evalu
 } (_) (_)
 
 def injHelper(r: Rexp, c: Char, vOld: Val, vReverse: Val => Val): EvalSpec[List[Char], Rexp, Val] = {
-	Constant(inj(r, c, vReverse(vOld)))
+	Constant(inj(r, c, vReverse(vOld), 0, 0))
 }
 // Rexp definition
     
@@ -65,6 +65,7 @@ case class ALT(r1: Rexp, r2: Rexp) extends Rexp
 case class SEQ(r1: Rexp, r2: Rexp) extends Rexp 
 case class STAR(r: Rexp) extends Rexp 
 case class RECD(x: String, r: Rexp) extends Rexp
+case class RANGE(lb: Char, rb: Char) extends Rexp
 
 // Rexp length calculation
 
@@ -76,6 +77,7 @@ def calculateRexpElements(r: Rexp): Int = r match {
 	case ALT(x, y) => 1 + calculateRexpElements(x) + calculateRexpElements(y)
 	case STAR(x) => 1 + calculateRexpElements(x)
 	case RECD(_, x) => 1 + calculateRexpElements(x)
+	case RANGE(_, _) => 1
 }
 
 // Val definition
@@ -120,6 +122,7 @@ def nullable(r: Rexp): Boolean = r match {
 	case SEQ(v1, v2) => nullable(v1) && nullable(v2)
 	case STAR(_) => true
 	case RECD(_, v) => nullable(v)
+	case RANGE(_, _) => false
 }
 
 def der(r: Rexp, c: Char): Rexp = r match {
@@ -132,6 +135,7 @@ def der(r: Rexp, c: Char): Rexp = r match {
 		else SEQ(der(v1, c), v2)
 	case STAR(v) => SEQ(der(v, c), STAR(v))
 	case RECD(_, v) => der(v, c)
+	case RANGE(lb, rb) => if (lb <= c && c <= rb) EMPTY else NULL
 }
 
 def ders(r: Rexp, s: List[Char]): Rexp = s match {
@@ -159,78 +163,106 @@ def env(v: Val): List[(String, String)] = v match {
 	case Rec(s, v) => (s, flat(v)) :: env(v)
 }
 
-def mkEps(r: Rexp, left: Int = 0, right: Int = 0): Val = r match {
+def valSize(v: Val): Int = v match {
+	case Void => 1
+	case Chr(c) => 1
+	case Left(v, n) => 1 + valSize(v)
+	case Right(v, n) => 1 + valSize(v)
+	case Seqv(v1, v2) => 1 + valSize(v1) + valSize(v2)
+	case Stars(lst) => 1 + lst.map(valSize).sum
+	case Rec(s, v) => 1 + valSize(v)
+}
+
+def valSizeExpanded(v: Val): Int = v match {
+	case Void => 1
+	case Chr(c) => 1
+	case Left(v, n) => n + valSizeExpanded(v)
+	case Right(v, n) => n + valSizeExpanded(v)
+	case Seqv(v1, v2) => 1 + valSizeExpanded(v1) + valSizeExpanded(v2)
+	case Stars(lst) => 1 + lst.map(valSizeExpanded).sum
+	case Rec(s, v) => 1 + valSizeExpanded(v)
+}
+
+def mkEps(r: Rexp, left1: Int = 0, right1: Int = 0): Val = r match {
 	case EMPTY => {
-		if (left != 0) 
-			Left(Void, left)
-		else if (right != 0)
-			Right(Void, right)
+		if (left1 != 0) 
+			Left(Void, left1)
+		else if (right1 != 0)
+			Right(Void, right1)
 		else 
 			Void
 	}
 	case ALT(v1, v2) => {
 		if (nullable(v1)) {
-			if (right != 0)
-				Right(mkEps(v1, 1, 0), right)
+			if (right1 != 0)
+				Right(mkEps(v1, 1, 0), right1)
 			else
-				mkEps(v1, left + 1, 0)
+				mkEps(v1, left1 + 1, 0)
 		} else { 
-			if (left != 0)
-				Left(mkEps(v2, 0, 1), left)
+			if (left1 != 0)
+				Left(mkEps(v2, 0, 1), left1)
 			else 
-				mkEps(v2, 0, right + 1)
+				mkEps(v2, 0, right1 + 1)
 		}
 	}
 	case SEQ(v1, v2) => {
-		if (left != 0)
-			Left(Seqv(mkEps(v1), mkEps(v2)), left)
-		else if (right != 0)
-			Right(Seqv(mkEps(v1), mkEps(v2)), right)
+		if (left1 != 0)
+			Left(Seqv(mkEps(v1), mkEps(v2)), left1)
+		else if (right1 != 0)
+			Right(Seqv(mkEps(v1), mkEps(v2)), right1)
 		else
 			Seqv(mkEps(v1), mkEps(v2))
 	}
 	case STAR(r) => {
-		if (left != 0)
-			Left(Stars(Nil), left)
-		else if (right != 0)
-			Right(Stars(Nil), right)
+		if (left1 != 0)
+			Left(Stars(Nil), left1)
+		else if (right1 != 0)
+			Right(Stars(Nil), right1)
 		else 
 			Stars(Nil)
 	}
 	case RECD(s, v) => { 
-		if (left != 0) 
-			Left(Rec(s, mkEps(v)), left)
-		else if (right != 0)
-			Right(Rec(s, mkEps(v)), right)
+		if (left1 != 0) 
+			Left(Rec(s, mkEps(v)), left1)
+		else if (right1 != 0)
+			Right(Rec(s, mkEps(v)), right1)
 		else 
 			Rec(s, mkEps(v))
 	}
+	case RANGE(_, _) => throw new IllegalArgumentException("Range must not be reached in mkEps")
 }
 
-//mind-blowing
-def inj(r: Rexp, c: Char, v: Val, left: Int = 0, right: Int = 0): Val = (r, v) match {
+//mind-blowing - why the hell it does not work this way?
+def inj(r: Rexp, c: Char, v: Val, left_counter: Int = 0, right_counter: Int = 0): Val = (r, v) match {
 	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
 	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Left(Seqv(v1, v2), 1)) /*if left == counter - 1*/ => {
+	case (SEQ(r1, r2), Left(Seqv(v1, v2), counter1)) if (counter1 - 1 == left_counter) => {
 		Seqv(inj(r1, c, v1), v2)
-		// if (left == 0)
+		// println("val in injection seq is " + v);
+		// println("left and right " + left_counter + " " + right_counter);
+		// if (left_counter == 0)
 		// 	Seqv(inj(r1, c, v1), v2)
 		// else 
-		// 	Left(Seqv(inj(r1, c, v1), v2), left)
+		// 	Left(Seqv(inj(r1, c, v1), v2), left_counter)
 	}
 	case (SEQ(r1, r2), Right(v2, counter)) => {
-		Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1)))
-		// if (right == 0) {
-		// 	if (counter == 1)
-		// 		Seqv(mkEps(r1), inj(r2, c, v2))
-		// 	else 
-		// 		Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - 1)))
-		// } else {
-		// 	if (right == counter - 1)
-		// 		Right(Seqv(mkEps(r1), inj(r2, c, v2)), right)
-		// 	else 
-		// 		Right(Seqv(mkEps(r1), inj(r2, c, Right(v2, counter - right - 1))), right)
+		// Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1)))
+		if (right_counter == 0) {
+			Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1), 0, 0))
+		} else {
+			Right(Seqv(mkEps(r1), inj(r2, c, if (counter - right_counter == 1) v2 else Right(v2, counter - 1 - right_counter), 0, 0)) , right_counter)
+		}
+	}
+	case (ALT(r1, r2), Right(v2, counter)) => {
+		// val vl = inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1))
+		// vl match {
+		// 	case Right(vr, counter1) => Right(vr, counter1 + 1)
+		// 	case vr => Right(vr, 1)
 		// }
+		if (right_counter == counter - 1)
+			Right(inj(r2, c, v2), counter)
+		else
+			inj(r2, c, Right(v2, counter), 0, right_counter + 1)
 	}
 	case (ALT(r1, r2), Left(v1, counter)) => {
 		val vl = inj(r1, c, if (counter == 1) v1 else Left(v1, counter - 1))
@@ -238,31 +270,36 @@ def inj(r: Rexp, c: Char, v: Val, left: Int = 0, right: Int = 0): Val = (r, v) m
 			case Left(vr, counter1) => Left(vr, counter1 + 1)
 			case vr => Left(vr, 1)
 		}
-		// if (left == counter - 1)
-		// 	Left(inj(r1, c, v1), counter)
-		// else
-		// 	inj(r1, c, Left(v1, counter), left + 1, 0)
-	}
-	case (ALT(r1, r2), Right(v2, counter)) => {
-		val vl = inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1))
-		vl match {
-			case Right(vr, counter1) => Right(vr, counter1 + 1)
-			case vr => Right(vr, 1)
-		}
-		// if (right == counter - 1)
-		// 	Right(inj(r2, c, v2), counter)
-		// else
-		// 	inj(r2, c, Right(v2, counter), 0, right + 1)
+		// println("val in injection alt is " + v);
+		// println("left and right " + left_counter + " " + right_counter + " counter " + counter);
+		// if (counter - left_counter == 1) {
+		// 	Left(inj(r1, c, v1, 0, 0), counter)
+		// } else 
+		// 	inj(r1, c, v, left_counter + 1, 0)
 	}
 	case (CHAR(d), Void) => Chr(d)
 	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
+	case (RANGE(lb, rb), Void) => if (lb <= c && c <= rb) Chr(c) else throw new IllegalArgumentException("Range error in injection")
 }
+
+def valChecker(v: Val): Boolean = v match {
+	case Void => true
+	case Chr(c) => true
+	case Left(Left(_, _), _) => false
+	case Left(v, n) => if (n < 1) false else valChecker(v)
+	case Right(Right(_, _), _) => false
+	case Right(v, n) => if (n < 1) false else valChecker(v)
+	case Seqv(v1, v2) => valChecker(v1) && valChecker(v2)
+	case Stars(lst) => lst.map(valChecker).forall(x => x == true)
+	case Rec(s, v) => valChecker(v)
+}
+
 
 def matcher(r: Rexp, s: String): Boolean = nullable(ders(r, s.toList))
 
 def parse(r: Rexp, s: List[Char]): Val = s match {
 	case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
-	case head::tail => inj(r, head, parse(der(r, head), tail))
+	case head::tail => inj(r, head, parse(der(r, head), tail), 0, 0)
 } 
 
 
@@ -551,7 +588,7 @@ def parseSimp(r: Rexp, s: List[Char]): Val = {
 		case head::tail => {
 			val dr = der(r, head)
 			val (rd, funct) = simplify(dr)
-			inj(r, head, funct(parseSimp(rd, tail)))
+			inj(r, head, funct(parseSimp(rd, tail)), 0, 0)
 		}
 	}
 }
@@ -563,6 +600,8 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 		case Nil => {
 			if (nullable(r)) { 
 				val vl = mkEps(r)
+				if (!valChecker(vl))
+					println("Achtung!")
 				// println("val " + vl)
 				vl 
 			} else 
@@ -571,17 +610,19 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
 			val vl = funct(parseSimpNoAssociativity(rd, tail))
+			if (!valChecker(vl))
+				println("Cazzo!")
 			// println("val " + vl)
-			val vl2 = inj(r, head, vl)
-			// println("val after inj " + vl2)
+			val vl2 = inj(r, head, vl, 0, 0)
+			// println("---------------")
 			vl2
 		}
 	}
 }
 
 def PLUS(r: Rexp) = r ~ r.%
-val SYM = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
-val DIGIT = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+val SYM = RANGE('a', 'z') //"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+val DIGIT = RANGE('0', '9') //"0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 val ID = SYM ~ (SYM | DIGIT).% 
 val NUM = PLUS(DIGIT)
 val KEYWORD : Rexp = "skip" | "while" | "do" | "if" | "then" | "else" | "read" | "write" | "true" | "false"
@@ -617,7 +658,11 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 
 val rega: Rexp = ("k" $ KEYWORD | ("w" $ WHITESPACE) | ("i" $ ID)).%
 
-println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+val result = parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
+
+println(result)
+println(valSize(result))
+println(valSizeExpanded(result))
 
 // calculator(WHILE_REGS, pfib2.toList)
 

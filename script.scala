@@ -65,6 +65,7 @@ case class ALT(r1: Rexp, r2: Rexp) extends Rexp
 case class SEQ(r1: Rexp, r2: Rexp) extends Rexp 
 case class STAR(r: Rexp) extends Rexp 
 case class RECD(x: String, r: Rexp) extends Rexp
+case class RANGE(left_border: Char, right_border: Char) extends Rexp
 
 // Rexp length calculation
 
@@ -76,6 +77,7 @@ def calculateRexpElements(r: Rexp): Int = r match {
 	case ALT(x, y) => 1 + calculateRexpElements(x) + calculateRexpElements(y)
 	case STAR(x) => 1 + calculateRexpElements(x)
 	case RECD(_, x) => 1 + calculateRexpElements(x)
+	case RANGE(_, _) => 1
 }
 
 // Val definition
@@ -120,6 +122,7 @@ def nullable(r: Rexp): Boolean = r match {
 	case SEQ(v1, v2) => nullable(v1) && nullable(v2)
 	case STAR(_) => true
 	case RECD(_, v) => nullable(v)
+	case RANGE(_, _) => false
 }
 
 def der(r: Rexp, c: Char): Rexp = r match {
@@ -132,6 +135,7 @@ def der(r: Rexp, c: Char): Rexp = r match {
 		else SEQ(der(v1, c), v2)
 	case STAR(v) => SEQ(der(v, c), STAR(v))
 	case RECD(_, v) => der(v, c)
+	case RANGE(lb, rb) => if (lb <= c && rb >= c) EMPTY else NULL
 }
 
 def ders(r: Rexp, s: List[Char]): Rexp = s match {
@@ -167,17 +171,25 @@ def mkEps(r: Rexp): Val = r match {
 	case SEQ(v1, v2) => Seqv(mkEps(v1), mkEps(v2))
 	case STAR(r) => Stars(Nil)
 	case RECD(s, v) => Rec(s, mkEps(v))
+	case RANGE(_, _) => throw new IllegalArgumentException("mkEps range error") 
 }
 
 def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
 	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
 	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Left(Seqv(v1, v2))) => Seqv(inj(r1, c, v1), v2)
+	case (SEQ(r1, r2), Left(Seqv(v1, v2))) => { 
+		println("val in injection seq is " + v);
+		Seqv(inj(r1, c, v1), v2)
+	}
 	case (SEQ(r1, r2), Right(v2)) => Seqv(mkEps(r1), inj(r2, c, v2))
-	case (ALT(r1, r2), Left(v1)) => Left(inj(r1, c, v1))
+	case (ALT(r1, r2), Left(v1)) => {
+		println("val in injection alt is " + v);
+		Left(inj(r1, c, v1))
+	}
 	case (ALT(r1, r2), Right(v2)) => Right(inj(r2, c, v2))
 	case (CHAR(d), Void) => Chr(d)
 	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
+	case (RANGE(lb, rb), Void) => if (c >= lb && c <= rb) Chr(c) else throw new IllegalArgumentException("Range error in injection")
 }
 
 def matcher(r: Rexp, s: String): Boolean = nullable(ders(r, s.toList))
@@ -427,13 +439,15 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
-			inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
+			val iv = inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
+			println("---------------")
+			iv
 		}
 	}
 }
 
 def PLUS(r: Rexp) = r ~ r.%
-val SYM = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+val SYM: Rexp = RANGE('a', 'z') //"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
 val DIGIT = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 val ID = SYM ~ (SYM | DIGIT).% 
 val NUM = PLUS(DIGIT)
@@ -468,7 +482,8 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+println(parse(WHILE_REGS, "r".toList))
+println(parseSimpNoAssociativity(WHILE_REGS, "r".toList))
 
 // calculator(WHILE_REGS, pfib2.toList)
 
