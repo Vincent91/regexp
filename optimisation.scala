@@ -621,6 +621,7 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 }
 
 def PLUS(r: Rexp) = r ~ r.%
+def QUESTION(r: Rexp) = (EMPTY | r)
 val SYM = RANGE('a', 'z') //"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
 val DIGIT = RANGE('0', '9') //"0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 val ID = SYM ~ (SYM | DIGIT).% 
@@ -633,6 +634,7 @@ val RPAREN: Rexp = ")"
 val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
+val DOT: Rexp = (SYM | DIGIT)
 
 
 val WHILE_REGS = (("k" $ KEYWORD) | 
@@ -660,9 +662,9 @@ val rega: Rexp = ("k" $ KEYWORD | ("w" $ WHITESPACE) | ("i" $ ID)).%
 
 val result = parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
 
-println(result)
-println(valSize(result))
-println(valSizeExpanded(result))
+// println(result)
+// println(valSize(result))
+// println(valSizeExpanded(result))
 
 // calculator(WHILE_REGS, pfib2.toList)
 
@@ -721,3 +723,216 @@ def time[T](code: => T) = {
 //   time(parseSimp(WHILE_REGS, (prog2 * i).toList))
 // }
 
+val test2Rexp = "}"; val test2 = "}"	//(0,1)
+
+println("test 2: " + parseSimpNoAssociativity(test2Rexp, test2.toList))
+
+val test3Rexp = "]"; val test3 = "]"	//(0,1)
+
+println("test 3: " + parseSimpNoAssociativity(test3Rexp, test3.toList))
+
+val test8Rexp = (DOT ~ DOT).% ~ (DOT ~ DOT ~ DOT).%; val test8 = "abcd"	//(0,4)(2,4)(?,?)
+
+println("test 8: " + parseSimpNoAssociativity(test8Rexp, test8.toList))
+
+val test9Rexp =  ("ab" | "a") ~ ("bc" | "c"); val test9	= "abc"	//(0,3)(0,2)(2,3)
+
+println("test 9: " + parseSimpNoAssociativity(test9Rexp, test9.toList))
+
+val test10Rexp = (("ab") ~ "c") | "abc"; val test10 = "abc"	//(0,3)(0,2)
+
+println("test 10: " + parseSimpNoAssociativity(test10Rexp, test10.toList))
+
+val test12Rexp = ("a".%) ~ (QUESTION("b")) ~ (PLUS("b")) ~ "bbb"; val test12 = "aaabbbbbbb"	//(0,10)(0,3)(3,4)(4,7)
+
+println("test 12: " + parseSimpNoAssociativity(test12Rexp, test12.toList))
+
+val test15Rexp = (("a" | "a") | "a"); val test15 = "a"	//(0,1)(0,1)(0,1)
+
+println("test 15: " + parseSimpNoAssociativity(test15Rexp, test15.toList))
+
+val test16Rexp = ("a".%) ~ ("a" | "aa"); val test16 = "aaaa"	//(0,4)(0,3)(3,4)
+
+println("test 16: " + parseSimpNoAssociativity(test16Rexp, test16.toList))
+
+val test17Rexp = "a".% ~ (("a" ~ DOT) | "aa"); val test17 =	"aaaa"	//(0,4)(2,4)
+
+println("test 17: " + parseSimpNoAssociativity(test17Rexp, test17.toList))
+
+val test18Rexp = "a" ~ ("b") | "c" ~ ("d") | "a" ~ ("e") ~ "f"; val test18 = "aef"	//(0,3)(?,?)(?,?)(1,2)
+
+println("test 18: " + parseSimpNoAssociativity(test18Rexp, test18.toList))
+
+val test19Rexp = QUESTION("a" | "b") ~ DOT.%; val test19 = "b"	//(0,1)(0,1)
+
+println("test 19: " + parseSimpNoAssociativity(test19Rexp, test19.toList))
+
+val test20Rexp = ("a" | "b") ~ "c" | "a" ~ ("b" | "c"); val test20 = "ac"	//(0,2)(0,1)(?,?)
+
+println("test 20: " + parseSimpNoAssociativity(test20Rexp, test20.toList))
+
+val test21Rexp = ("a" | "b") ~ "c" | "a" ~ ("b" | "c"); val test21 = "ab"	//(0,2)(?,?)(1,2)
+
+println("test 21: " + parseSimpNoAssociativity(test21Rexp, test21.toList))
+
+val test22Rexp = ("a" | "b").% ~ "c" | ("a" | "ab").% ~ "c"; val test22 = "abc"	//(0,3)(1,2)(?,?)
+
+println("test 22: " + parseSimpNoAssociativity(test22Rexp, test22.toList))
+
+val test24Rexp = (DOT ~ "a" | DOT ~ "b") ~ DOT.% | DOT.% ~ (DOT ~ "a" | DOT ~ "b"); val test24 = "xa"	//(0,2)(0,2)(?,?)
+
+println("test 24: " + parseSimpNoAssociativity(test24Rexp, test24.toList))
+
+val test25Rexp = QUESTION("a") ~ ("ab" | "ba") ~ "ab"; val test25 = "abab"	//(0,4)(0,2)
+
+println("test 25: " + parseSimpNoAssociativity(test25Rexp, test25.toList))
+
+val test26Rexp = QUESTION("a") ~ ("a" ~ QUESTION("c") ~ "b" | "ba") ~ "ab"; val test26 = "abab"	//(0,4)(0,2)
+
+println("test 26: " + parseSimpNoAssociativity(test26Rexp, test26.toList))
+
+val test30Rexp = ("aa" | "aaa").% | ("a" | "aaaaa"); val test30 = "aa"	//(0,2)(0,2)(?,?)
+
+println("test 30: " + parseSimpNoAssociativity(test30Rexp, test30.toList))
+
+val test31Rexp = ("a" ~ DOT | DOT ~ "a" ~ DOT).% | ("a" | DOT ~ "a" ~ DOT ~ DOT ~ DOT); val test31 = "aa"	//(0,2)(0,2)(?,?)
+
+println("test 31: " + parseSimpNoAssociativity(test31Rexp, test31.toList))
+
+val test34Rexp = ("aB" | "cD").%; val test34 = "aBcD"	//(0,4)(2,4)
+
+println("test 34: " + parseSimpNoAssociativity(test34Rexp, test34.toList))
+
+val test39Rexp = ("a") ~ ("b") ~ ("c"); val test39 = "abc"	//(0,3)(0,1)(1,2)(2,3)
+
+println("test 39: " + parseSimpNoAssociativity(test39Rexp, test39.toList))
+
+val test43Rexp = (((((((((((((((((((((((((((((("x")))))))))))))))))))))))))))))); val test43 = "x"	// (0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)(0,1)
+
+println("test 43: " + parseSimpNoAssociativity(test43Rexp, test43.toList))
+
+val test44Rexp = (((((((((((((((((((((((((((((("x")))))))))))))))))))))))))))))).%; val test44 = "xx"	//(0,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)(1,2)
+
+println("test 44: " + parseSimpNoAssociativity(test44Rexp, test44.toList))
+
+val test45Rexp = QUESTION("a") ~ ("ab" | "ba").%; val test45 = "ababababababababababababababababababababababababababababababababababababababababa"	//(0,81)(79,81)
+
+println("test 45: " + parseSimpNoAssociativity(test45Rexp, test45.toList))
+
+val test50Rexp = "a".% ~ "a".% ~ "a".% ~ "a".% ~ "a".% ~ "b"; val test50 = "aaaaaaaaab"	//(0,10)
+
+println("test 50: " + parseSimpNoAssociativity(test50Rexp, test50.toList))
+
+val test51Rexp = "a" ~ PLUS("b") ~ "bc"; val test51 = "abbc"		//(0,4)
+
+println("test 51: " + parseSimpNoAssociativity(test51Rexp, test51.toList))
+
+val test52Rexp = "a" ~ PLUS("b") ~ "bc"; val test52 = "abbbbc"		//(0,6)
+
+println("test 52: " + parseSimpNoAssociativity(test52Rexp, test52.toList))
+
+val test53Rexp = "a" ~ QUESTION("b") ~ "bc"; val test53 = "abbc"		//(0,4)
+
+println("test 53: " + parseSimpNoAssociativity(test53Rexp, test53.toList))
+
+val test54Rexp = "a" ~ QUESTION("b") ~ "bc"; val test54 = "abc"		//(0,3)
+
+println("test 54: " + parseSimpNoAssociativity(test54Rexp, test54.toList))
+
+val test55Rexp = "a" ~ QUESTION("b") ~ "c"; val test55 = "abc"		//(0,3)
+
+println("test 55: " + parseSimpNoAssociativity(test55Rexp, test55.toList))
+
+val test58Rexp = "a(b";	val test58 = "a(b"		//(0,3)
+
+println("test 58: " + parseSimpNoAssociativity(test58Rexp, test58.toList))
+
+val test59Rexp = "a" ~ "(".% ~ "b"; val test59 = "ab"		//(0,2)
+
+println("test 59: " + parseSimpNoAssociativity(test59Rexp, test59.toList))
+
+val test60Rexp = "a" ~ "(".% ~ "b"; val test60 = "a((b"		//(0,4)
+
+println("test 60: " + parseSimpNoAssociativity(test60Rexp, test60.toList))
+
+val test62Rexp = ("a") ~ "b" ~ ("c"); val test62 = "abc"		//(0,3)(0,1)(2,3)
+
+println("test 62: " + parseSimpNoAssociativity(test62Rexp, test62.toList))
+
+val test64Rexp = "a".%; val test64 = "aaa"		//(0,3)
+
+println("test 64: " + parseSimpNoAssociativity(test64Rexp, test64.toList))
+
+val test68Rexp = (PLUS("a") | "b").%; val test68 = "ab"		//(0,2)(1,2)
+
+println("test 68: " + parseSimpNoAssociativity(test68Rexp, test68.toList))
+
+val test69Rexp = PLUS(PLUS("a") | "b"); val test69 = "ab"		//(0,2)(1,2)
+
+println("test 69: " + parseSimpNoAssociativity(test69Rexp, test69.toList))
+
+val test72Rexp = (RANGE('a', 'c')).% ~ "d"; val test72 = "abbbcd"	//	(0,6)(4,5)
+
+println("test 72: " + parseSimpNoAssociativity(test72Rexp, test72.toList))
+
+val test73Rexp = (RANGE('a', 'c')).% ~ "bcd"; val test73 = "abcd"	//	(0,4)(0,1)
+
+println("test 73: " + parseSimpNoAssociativity(test73Rexp, test73.toList))
+
+val test74Rexp = "a" | "b" | "c" | "d" | "e"; val test74 = "e"		//(0,1)
+
+println("test 74: " + parseSimpNoAssociativity(test74Rexp, test74.toList))
+
+val test75Rexp = ("a" | "b" | "c" | "d" | "e") ~ "f"; val test75 = "ef"	//	(0,2)(0,1)
+
+println("test 75: " + parseSimpNoAssociativity(test75Rexp, test75.toList))
+
+val test79Rexp = ("ab" | ("a" ~ "b".%)) ~ "bc"; val test79 = "abc"		//(0,3)(0,1)
+
+println("test 79: " + parseSimpNoAssociativity(test79Rexp, test79.toList))
+
+val test80Rexp = "a" ~ (RANGE('b', 'c').%) ~ "c".%; val test80 = "abc"		//(0,3)(1,3)
+
+println("test 80: " + parseSimpNoAssociativity(test80Rexp, test80.toList))
+
+val test81Rexp = "a" ~ (RANGE('b', 'c').%) ~ ("c".% ~ "d"); val test81 = "abcd"	//	(0,4)(1,3)(3,4)
+
+println("test 81: " + parseSimpNoAssociativity(test81Rexp, test81.toList))
+
+val test82Rexp = "a" ~ (PLUS(RANGE('b', 'c'))) ~ ("c".% ~ "d"); val test82 = "abcd"	//	(0,4)(1,3)(3,4)
+
+println("test 82: " + parseSimpNoAssociativity(test82Rexp, test82.toList))
+
+val test83Rexp = "a" ~ (RANGE('b', 'c').%) ~ (PLUS("c") ~ "d"); val test83 = "abcd"	//	(0,4)(1,2)(2,4)
+
+println("test 83: " + parseSimpNoAssociativity(test83Rexp, test83.toList))
+
+val test84Rexp = "a" ~ RANGE('b', 'd').% ~ "dcdcde"; val test84 = "adcdcde"	//	(0,7)
+
+println("test 84: " + parseSimpNoAssociativity(test84Rexp, test84.toList))
+
+val test85Rexp = ("ab" | "a") ~ "b".% ~ "c"; val test85	= "abc"		//(0,3)(0,2)
+
+println("test 85: " + parseSimpNoAssociativity(test85Rexp, test85.toList))
+
+val test86Rexp = (("a") ~ ("b") ~ "c") ~ ("d"); val test86 = "abcd"	//	(0,4)(0,3)(0,1)(1,2)(3,4)
+
+println("test 86: " + parseSimpNoAssociativity(test86Rexp, test86.toList))
+
+val test88Rexp = ("b" ~ PLUS("c") ~ "d" | "e" ~ "f".% ~ "g" ~ DOT | QUESTION("h") ~ "i" ~ ("j" | "k")); val test88 = "effgz"	
+//	(0,5)(0,5)(?,?)
+
+println("test 88: " + parseSimpNoAssociativity(test88Rexp, test88.toList))
+
+val test89Rexp = ("b" ~ PLUS("c") ~ "d" | "e" ~ "f".% ~ "g" ~ DOT | QUESTION("h") ~ "i" ~ ("j" | "k")); val test89 = "ij"		
+//(0,2)(0,2)(1,2)
+
+println("test 89: " + parseSimpNoAssociativity(test89Rexp, test89.toList))
+
+val test92Rexp = (DOT.%) ~ "c" ~ (DOT.%); val test92 = "abcde"		//(0,5)(0,2)(3,5)
+
+println("test 92: " + parseSimpNoAssociativity(test92Rexp, test92.toList))
+
+val test93Rexp = "a" ~ ("bc") ~ "d"; val test93 = "abcd"		//(0,4)(1,3) 
+
+println("test 93: " + parseSimpNoAssociativity(test93Rexp, test93.toList))
