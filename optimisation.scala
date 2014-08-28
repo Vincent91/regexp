@@ -46,7 +46,7 @@ implicit def toConst[L, R, V](v: V): Constant[L, R, V] = Constant[L, R, V](v)
 def parseSimpStack:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evaluate[List[Char], Rexp, Val] { 
 	case (Nil, r) => if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException 
 	case (head::tail, r) => {
-		val (rsimp, func) = simplify(der(r, head));
+		val (rsimp, func) = simplifyWithoutAssociativity(der(r, head));
 		Recurse(tail, func, rsimp, injHelper(r, head, _: Val, func))
 	}
 } (_) (_)
@@ -232,54 +232,81 @@ def mkEps(r: Rexp, left1: Int = 0, right1: Int = 0): Val = r match {
 	case RANGE(_, _) => throw new IllegalArgumentException("Range must not be reached in mkEps")
 }
 
-//mind-blowing - why the hell it does not work this way?
-def inj(r: Rexp, c: Char, v: Val, left_counter: Int = 0, right_counter: Int = 0): Val = (r, v) match {
-	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
-	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
-	case (SEQ(r1, r2), Left(Seqv(v1, v2), counter1)) if (counter1 - 1 == left_counter) => {
-		Seqv(inj(r1, c, v1), v2)
-		// println("val in injection seq is " + v);
-		// println("left and right " + left_counter + " " + right_counter);
-		// if (left_counter == 0)
-		// 	Seqv(inj(r1, c, v1), v2)
-		// else 
-		// 	Left(Seqv(inj(r1, c, v1), v2), left_counter)
-	}
-	case (SEQ(r1, r2), Right(v2, counter)) => {
-		// Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1)))
-		if (right_counter == 0) {
-			Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1), 0, 0))
-		} else {
-			Right(Seqv(mkEps(r1), inj(r2, c, if (counter - right_counter == 1) v2 else Right(v2, counter - 1 - right_counter), 0, 0)) , right_counter)
+//mind-blowing - why the hell does not it work this way?
+def inj(r: Rexp, c: Char, v: Val, left_counter: Int = 0, right_counter: Int = 0): Val ={ 
+	// println(v);
+		(r, v) match {
+		case (STAR(r), Seqv(v1, Stars(vs))) => {
+			// println("star " + left_counter + " " + right_counter);
+			Stars(inj(r, c, v1, 0, 0)::vs)
 		}
-	}
-	case (ALT(r1, r2), Right(v2, counter)) => {
-		// val vl = inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1))
-		// vl match {
-		// 	case Right(vr, counter1) => Right(vr, counter1 + 1)
-		// 	case vr => Right(vr, 1)
-		// }
-		if (right_counter == counter - 1)
-			Right(inj(r2, c, v2), counter)
-		else
-			inj(r2, c, Right(v2, counter), 0, right_counter + 1)
-	}
-	case (ALT(r1, r2), Left(v1, counter)) => {
-		val vl = inj(r1, c, if (counter == 1) v1 else Left(v1, counter - 1))
-		vl match {
-			case Left(vr, counter1) => Left(vr, counter1 + 1)
-			case vr => Left(vr, 1)
+		case (SEQ(r1, r2), Seqv(v1, v2)) => {
+			// println("seq seq " + left_counter + " " + right_counter);
+			Seqv(inj(r1, c, v1, 0, 0), v2)
 		}
-		// println("val in injection alt is " + v);
-		// println("left and right " + left_counter + " " + right_counter + " counter " + counter);
-		// if (counter - left_counter == 1) {
-		// 	Left(inj(r1, c, v1, 0, 0), counter)
-		// } else 
-		// 	inj(r1, c, v, left_counter + 1, 0)
+		case (SEQ(r1, r2), Left(Seqv(v1, v2), counter1)) if (counter1 - 1 == left_counter) => {
+			// Seqv(inj(r1, c, v1), v2)
+			// println("val in injection seq is " + v);
+			// println("left and right " + left_counter + " " + right_counter);
+			// println("seq left " + left_counter + " " + right_counter);
+			if (left_counter == 0)
+				Seqv(inj(r1, c, v1, 0, 0), v2)
+			else 
+				Left(Seqv(inj(r1, c, v1, 0, 0), v2), left_counter)
+		}
+		case (SEQ(r1, r2), Right(v2, counter)) => {
+			// Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1)))
+			// println("seq right " + left_counter + " " + right_counter);
+			if (right_counter == 0) {
+				Seqv(mkEps(r1), inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1), 0, 0))
+			} else {
+				Right(Seqv(mkEps(r1), inj(r2, c, if (counter - right_counter == 1) v2 else Right(v2, counter - 1 - right_counter), 0, 0)) , right_counter)
+			}
+		}
+		case (ALT(r1, r2), Right(v2, counter)) => {
+			// val vl = inj(r2, c, if (counter == 1) v2 else Right(v2, counter - 1))
+			// vl match {
+			// 	case Right(vr, counter1) => Right(vr, counter1 + 1)
+			// 	case vr => Right(vr, 1)
+			// }
+			// println("alt right " + left_counter + " " + right_counter);
+			if (right_counter == counter - 1)
+				Right(inj(r2, c, v2, 0, 0), counter)
+			else
+				inj(r2, c, v, 0, right_counter + 1)
+		}
+		case (ALT(r1, r2), Left(v1, counter)) => {
+			// val vl = inj(r1, c, if (counter == 1) v1 else Left(v1, counter - 1))
+			// vl match {
+			// 	case Left(vr, counter1) => Left(vr, counter1 + 1)
+			// 	case vr => Left(vr, 1)
+			// }
+			// println("val in injection alt is " + v);
+			// println("left and right " + left_counter + " " + right_counter + " counter " + counter);
+			// println("alt left " + left_counter + " " + right_counter);
+			if (counter - left_counter == 1)
+				Left(inj(r1, c, v1, 0, 0), counter)
+			else 
+				inj(r1, c, v, left_counter + 1, 0)
+		}
+		case (CHAR(d), Void) => {
+			// println("char void" + left_counter + " " + right_counter);
+			Chr(d)
+		}
+		case (RECD(s, r1), Left(v1, counter)) => {
+			// println("rect left " + left_counter + " " + right_counter);
+			Left(Rec(s, inj(r1, c, Left(v1, counter - left_counter), 0, 0)), left_counter)
+		}
+		case (RECD(s, r1), Right(v2, counter)) => {
+			// println("rect right " + left_counter + " " + right_counter);
+			Left(Rec(s, inj(r1, c, Right(v2, counter - right_counter), 0, 0)), right_counter)
+		}
+		case (RECD(s, r1), _) => {
+			// println("recd anything " + left_counter + " " + right_counter);
+			Rec(s, inj(r1, c, v, 0, 0))
+		}
+		case (RANGE(lb, rb), Void) => if (lb <= c && c <= rb) Chr(c) else throw new IllegalArgumentException("Range error in injection")
 	}
-	case (CHAR(d), Void) => Chr(d)
-	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
-	case (RANGE(lb, rb), Void) => if (lb <= c && c <= rb) Chr(c) else throw new IllegalArgumentException("Range error in injection")
 }
 
 def valChecker(v: Val): Boolean = v match {
@@ -598,10 +625,11 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 	// println("rexp " + r)
 	s match {
 		case Nil => {
+			// println("current regex " + r);
 			if (nullable(r)) { 
 				val vl = mkEps(r)
-				if (!valChecker(vl))
-					println("Achtung!")
+				// if (!valChecker(vl))
+					// println("Achtung!")
 				// println("val " + vl)
 				vl 
 			} else 
@@ -610,8 +638,8 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
 			val vl = funct(parseSimpNoAssociativity(rd, tail))
-			if (!valChecker(vl))
-				println("Cazzo!")
+			// if (!valChecker(vl))
+				// println("Cazzo!")
 			// println("val " + vl)
 			val vl2 = inj(r, head, vl, 0, 0)
 			// println("---------------")
@@ -622,10 +650,14 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 
 def PLUS(r: Rexp) = r ~ r.%
 def QUESTION(r: Rexp) = (EMPTY | r)
-val SYM = RANGE('a', 'z') //"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
-val DIGIT = RANGE('0', '9') //"0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-val ID = SYM ~ (SYM | DIGIT).% 
-val NUM = PLUS(DIGIT)
+val SYM1 = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+val SYM2 = RANGE('a', 'z') //
+val DIGIT1 = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+val DIGIT2 = RANGE('0', '9') //
+val ID1 = SYM1 ~ (SYM1 | DIGIT1).% 
+val ID2 = SYM2 ~ (SYM2 | DIGIT2).%
+val NUM1 = PLUS(DIGIT1)
+val NUM2 = PLUS(DIGIT2)
 val KEYWORD : Rexp = "skip" | "while" | "do" | "if" | "then" | "else" | "read" | "write" | "true" | "false"
 val SEMI: Rexp = ";"
 val OP: Rexp = ":=" | "==" | "-" | "+" | "*" | "!=" | "<" | ">" | "<=" | ">=" | "%" | "/"
@@ -634,17 +666,20 @@ val RPAREN: Rexp = ")"
 val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
-val DOT: Rexp = (SYM | DIGIT)
+val DOT: Rexp = (SYM1 | DIGIT1)
 
 
-val WHILE_REGS = (("k" $ KEYWORD) | 
-                  ("i" $ ID) | 
+val WHILE_REGS = (("k" $ KEYWORD) |
+				  ("i" $ ID1) | 
                   ("o" $ OP) | 
-                  ("n" $ NUM) | 
+                  ("n" $ NUM1) | 
                   ("s" $ SEMI) | 
                   ("p" $ (LPAREN | RPAREN)) | 
                   ("b" $ (BEGIN | END)) | 
                   ("w" $ WHITESPACE)).%
+
+val WHILE_REGS1 = (KEYWORD | ID1 | OP | NUM1 | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
+val WHILE_REGS2 = (KEYWORD | ID2 | OP | NUM2 | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 // Some Tests
 
 val pfib = """read n"""
@@ -658,9 +693,21 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-val rega: Rexp = ("k" $ KEYWORD | ("w" $ WHITESPACE) | ("i" $ ID)).%
+val regularka: Rexp = (("r" | "e" | "a" | "d").% | KEYWORD).%
+val stroka = "read"
 
-val result = parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
+
+// println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+
+// val result1 = parseSimpNoAssociativity(WHILE_REGS1, pfib2.toList)
+// val result2 = parseSimpNoAssociativity(WHILE_REGS2, pfib2.toList)
+
+// println(valSize(result1) + " " + valSizeExpanded(result1))
+// println(valSize(result2) + " " + valSizeExpanded(result2))
+
+// val rega: Rexp = ("k" $ KEYWORD | ("w" $ WHITESPACE) | ("i" $ ID)).%
+
+// val result = parseSimpNoAssociativity(WHILE_REGS2, pfib.toList)
 
 // println(result)
 // println(valSize(result))
@@ -695,33 +742,47 @@ def time[T](code: => T) = {
   val start = System.nanoTime()
   val result = code
   val end = System.nanoTime()
-  println((end - start)/1.0e9)
-  result
+  // println((end - start)/1.0e9)
+  (end - start)/1.0e9 
 }
 
-// val prog2 = """
-// i := 2;
-// max := 100;
-// while i < max do {
-//   isprime := 1;
-//   j := 2;
-//   while (j * j) <= i + 1  do {
-//     if i % j == 0 then isprime := 0  else skip;
-//     j := j + 1
-//   };
-//   if isprime == 1 then write i else skip;
-//   i := i + 1
-// }"""
-
-// for (i <- 500 to 500 by 1) {
-//   print(i.toString + ":  ")
-//   parseSimpStack((prog2 * i).toList, WHILE_REGS)
-// }
-
+val prog2 = """
+i := 2;
+max := 100;
+while i < max do {
+  isprime := 1;
+  j := 2;
+  while (j * j) <= i + 1  do {
+    if i % j == 0 then isprime := 0  else skip;
+    j := j + 1
+  };
+  if isprime == 1 then write i else skip;
+  i := i + 1
+}"""
 
 // for (i <- 1 to 50 by 1) {
-//   time(parseSimp(WHILE_REGS, (prog2 * i).toList))
+// 	var timeHolder: Double = 0;
+// 	// for (j <- 1 to 100 by 1) {			
+//   		// timeHolder += time(parseSimpStack((prog2 * i).toList, WHILE_REGS));
+//   	// }
+//   	// println("%4.4f".format(timeHolder / 100));
+//   	println(valSizeExpanded(parseSimpNoAssociativity(WHILE_REGS, (prog2 * i).toList)));
 // }
+
+
+var r = 0.0
+
+val ptrn: Rexp = ("a" | "b" | "ab").%
+
+val sequenceOfA = "a" * 100000
+
+// for (i <- 1 to 400 by 1) {
+//   r += time(parseSimpStack(sequenceOfA.toList, ptrn))
+// }
+
+// println("%4.4f".format(r / 400))
+
+// println(time(parseSimpStack(("a" * 4000000).toList, ptrn)))
 
 val test2Rexp = "}"; val test2 = "}"	//(0,1)
 

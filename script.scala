@@ -1,6 +1,12 @@
 import scala.language.implicitConversions    
 import scala.language.reflectiveCalls
 import scala.annotation.tailrec   
+import scala.collection.mutable.MutableList
+
+// Global variables
+
+var sizeAccumulator = 0;
+
 
 // Custom Stack definition
 
@@ -44,9 +50,16 @@ implicit def toConst[L, R, V](v: V): Constant[L, R, V] = Constant[L, R, V](v)
 
 
 def parseSimpStack:(List[Char], Rexp) => EvalSpec[List[Char], Rexp, Val] = evaluate[List[Char], Rexp, Val] { 
-	case (Nil, r) => if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException 
+	case (Nil, r) => {
+		// println(calculateRexpElements(r)); 
+		sizeAccumulator += calculateRexpElements(r);
+		if (nullable(r)) Constant(mkEps(r)) else throw new IllegalArgumentException
+	} 
 	case (head::tail, r) => {
-		val (rsimp, func) = simplify(der(r, head));
+		// println(calculateRexpElements(r));
+		sizeAccumulator += calculateRexpElements(r);
+		// val (rsimp, func) = simplify(der(r, head));
+		val (rsimp, func) = simplifyWithoutAssociativity(der(r, head));
 		Recurse(tail, func, rsimp, injHelper(r, head, _: Val, func))
 	}
 } (_) (_)
@@ -178,12 +191,12 @@ def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
 	case (STAR(r), Seqv(v1, Stars(vs))) => Stars(inj(r, c, v1)::vs)
 	case (SEQ(r1, r2), Seqv(v1, v2)) => Seqv(inj(r1, c, v1), v2)
 	case (SEQ(r1, r2), Left(Seqv(v1, v2))) => { 
-		println("val in injection seq is " + v);
+		// println("val in injection seq is " + v);
 		Seqv(inj(r1, c, v1), v2)
 	}
 	case (SEQ(r1, r2), Right(v2)) => Seqv(mkEps(r1), inj(r2, c, v2))
 	case (ALT(r1, r2), Left(v1)) => {
-		println("val in injection alt is " + v);
+		// println("val in injection alt is " + v);
 		Left(inj(r1, c, v1))
 	}
 	case (ALT(r1, r2), Right(v2)) => Right(inj(r2, c, v2))
@@ -191,14 +204,6 @@ def inj(r: Rexp, c: Char, v: Val): Val = (r, v) match {
 	case (RECD(s, r1), _) => Rec(s, inj(r1, c, v))
 	case (RANGE(lb, rb), Void) => if (c >= lb && c <= rb) Chr(c) else throw new IllegalArgumentException("Range error in injection")
 }
-
-def matcher(r: Rexp, s: String): Boolean = nullable(ders(r, s.toList))
-
-def parse(r: Rexp, s: List[Char]): Val = s match {
-	case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
-	case head::tail => inj(r, head, parse(der(r, head), tail))
-} 
-
 
 // altFinder without RECD
 def altFinder(r: Rexp, seq: Rexp, step: Int): (Rexp, Int, Boolean) = seq match {
@@ -440,17 +445,32 @@ def parseSimpNoAssociativity(r: Rexp, s: List[Char]): Val = {
 		case head::tail => {
 			val (rd, funct) = simplifyWithoutAssociativity(der(r, head))
 			val iv = inj(r, head, funct(parseSimpNoAssociativity(rd, tail)))
-			println("---------------")
+			// println("---------------")
 			iv
 		}
 	}
 }
 
+def matcher(r: Rexp, s: String): Boolean = nullable(ders(r, s.toList))
+
+def parse(r: Rexp, s: List[Char]): Val = {
+	println(calculateRexpElements(r))
+	s match {
+		case Nil => if (nullable(r)) mkEps(r) else throw new IllegalArgumentException
+		case head::tail => inj(r, head, parse(der(r, head), tail))
+	}
+} 
+
 def PLUS(r: Rexp) = r ~ r.%
-val SYM: Rexp = RANGE('a', 'z') //"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
-val DIGIT = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-val ID = SYM ~ (SYM | DIGIT).% 
-val NUM = PLUS(DIGIT)
+def QUESTION(r: Rexp) = (EMPTY | r)
+val SYM1 = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+val SYM2 = RANGE('a', 'z') //
+val DIGIT1 = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+val DIGIT2 = RANGE('0', '9') //
+val ID1 = SYM1 ~ (SYM1 | DIGIT1).% 
+val ID2 = SYM2 ~ (SYM2 | DIGIT2).%
+val NUM1 = PLUS(DIGIT1)
+val NUM2 = PLUS(DIGIT2)
 val KEYWORD : Rexp = "skip" | "while" | "do" | "if" | "then" | "else" | "read" | "write" | "true" | "false"
 val SEMI: Rexp = ";"
 val OP: Rexp = ":=" | "==" | "-" | "+" | "*" | "!=" | "<" | ">" | "<=" | ">=" | "%" | "/"
@@ -459,20 +479,61 @@ val RPAREN: Rexp = ")"
 val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
+val DOT: Rexp = (SYM1 | DIGIT1)
 
 
-val WHILE_REGS = (("k" $ KEYWORD) | 
-                  ("i" $ ID) | 
+val WHILE_REGS = (("k" $ KEYWORD) |
+				  ("i" $ ID1) | 
                   ("o" $ OP) | 
-                  ("n" $ NUM) | 
+                  ("n" $ NUM1) | 
                   ("s" $ SEMI) | 
                   ("p" $ (LPAREN | RPAREN)) | 
                   ("b" $ (BEGIN | END)) | 
                   ("w" $ WHITESPACE)).%
+
+val WHILE_REGS1 = (KEYWORD | ID1 | OP | NUM1 | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
+val WHILE_REGS2 = (KEYWORD | ID2 | OP | NUM2 | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
+
+
+val READ: Rexp = "read";
+val WRITE: Rexp = "write";
+val LETTER: Rexp = RANGE('a', 'z');
+val RECD_REXP = (("r" $ "read") | ("w" $ "write") | ("l" $ RANGE('a', 'z')) | ("s" $ " ")).%
+
 // Some Tests
 
 val pfib = """read n"""
 val pfib2 = """read n; write n; int a := 5;"""
+val pfib3 = """read a write a"""
+
+val prog2 = """
+i := 2;
+max := 100;
+while i < max do {
+  isprime := 1;
+  j := 2;
+  while (j * j) <= i + 1  do {
+    if i % j == 0 then isprime := 0  else skip;
+    j := j + 1
+  };
+  if isprime == 1 then write i else skip;
+  i := i + 1
+}"""
+
+val prog3 = """
+i := 2;
+result := n;
+while (i * i) <= n do {
+	if n % i == 0 then {
+		while n % i == 0 do
+			n := n / i;
+		result := result - result / i;
+	} else skip;
+	i := i + 1;
+}
+if n > 1 then result := result - result / n else skip;
+write result;
+"""
 
 def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	case Nil => println(calculateRexpElements(r))
@@ -482,8 +543,30 @@ def calculator(r: Rexp, s: List[Char]): Unit = s match {
 	}
 }
 
-println(parse(WHILE_REGS, "r".toList))
-println(parseSimpNoAssociativity(WHILE_REGS, "r".toList))
+def time[T](code: => T) = {
+  val start = System.nanoTime()
+  val result = code
+  val end = System.nanoTime()
+  // println((end - start)/1.0e9)
+  (end - start)/1.0e9 
+}
+
+// for (i <- 1 to 100 by 1) {
+// 	var timeHolder: Double = 0.0;
+// 	for (j <- 1 to 100 by 1) {
+// 		timeHolder += time(parseSimpStack((prog2 * i).toList, WHILE_REGS1))
+// 	}
+// 	println("%4.4f".format(timeHolder / 100));
+// }
+
+// parseSimpNoAssociativity(WHILE_REGS1, pfib2.toList)
+// println(parseSimpNoAssociativity(RECD_REXP, pfib3.toList))
+
+// println(parseSimpNoAssociativity(WHILE_REGS, pfib.toList))
+
+// parse(WHILE_REGS, prog2.toList)
+// println(parse(WHILE_REGS, "r".toList))
+// println(parseSimpNoAssociativity(WHILE_REGS, "r".toList))
 
 // calculator(WHILE_REGS, pfib2.toList)
 
@@ -494,8 +577,8 @@ println(parseSimpNoAssociativity(WHILE_REGS, "r".toList))
 // println(env(parseSimp(WHILE_REGS, pfib2.toList)))
 //------------------------------------
 
-// val regularka: Rexp = ("a" | "b" | "c" | "d" | "e").%
-// val stroka = "aebdc"
+// val regularka: Rexp = ("read" | "r" | "e" | "a" | "d").%
+// val stroka = "read"
 
 // println(parseSimpNoAssociativity(regularka, stroka.toList))
 
@@ -511,33 +594,105 @@ println(parseSimpNoAssociativity(WHILE_REGS, "r".toList))
 
 //------------------------------------
 
-def time[T](code: => T) = {
-  val start = System.nanoTime()
-  val result = code
-  val end = System.nanoTime()
-  println((end - start)/1.0e9)
-  result
-}
+// println(prog2.length)
 
-// val prog2 = """
-// i := 2;
-// max := 100;
-// while i < max do {
-//   isprime := 1;
-//   j := 2;
-//   while (j * j) <= i + 1  do {
-//     if i % j == 0 then isprime := 0  else skip;
-//     j := j + 1
-//   };
-//   if isprime == 1 then write i else skip;
-//   i := i + 1
-// }"""
+// parseSimpStack(prog3.toList, WHILE_REGS2)
+
+// parseSimpNoAssociativity(WHILE_REGS, pfib2.toList)
 
 // for (i <- 500 to 500 by 1) {
 //   print(i.toString + ":  ")
 //   parseSimpStack((prog2 * i).toList, WHILE_REGS)
 // }
 
+// val abReg = ("a" | "b" | "ab").%
+// val a1Reg: Rexp = QUESTION("a") ~ QUESTION("a") ~ QUESTION("a") ~ QUESTION("a") ~ QUESTION("a") ~ QUESTION("a") ~ QUESTION("a")
+// var aReg: Rexp = "a"
+// var a1: Rexp = QUESTION("a")
+// var aRega: Rexp = a1 ~ aReg 
+
+// for (i <- 1 to 28 by 1){
+// 	if (i > 1) {
+// 		a1 = a1 ~ QUESTION("a")
+// 		aRega = a1 ~ ("a" * i)
+// 	}
+// 	var timeHolder: Double = 0;
+// 	for (j <- 1 to 100 by 1){
+// 		timeHolder += time(parseSimpStack(("a" * i).toList, aRega))
+// 	}
+// 	println("%4.6f".format(timeHolder / 100))
+// }
+
+// println(time(parseSimpStack(("a" * 1000000).toList, abReg)))
+
+val sequenceOfA = "a" * 200000;
+var timeHolder: Double = 0;
+
+// for (i <- 1 to 100 by 1) {
+// 	timeHolder += time(parseSimpStack(sequenceOfA.toList, abReg));
+// }
+
+// timeHolder = 0
+
+// for (i <- 1 to 100 by 1) {
+// 	timeHolder += time(parseSimpStack((sequenceOfA * 5).toList, abReg));
+// }
+
+// println("%4.4f".format(timeHolder / 100))
+
+// for (i <- 1 to 100 by 1) {
+// 	var timeHolder: Double = 0;
+// 	for (j <- 1 to 100 by 1) {
+// 		timeHolder += time(parseSimpStack((prog3 * i).toList, WHILE_REGS1));
+// 	}
+// 	println("%4.4f".format(timeHolder / 100))	
+// }
+
+// println("-----------------------------------------------------------------------------");
+
+// for (i <- 1 to 100 by 1) {
+// 	var timeHolder: Double = 0;
+// 	for (j <- 1 to 100 by 1) {
+// 		timeHolder += time(parseSimpStack((prog3 * i).toList, WHILE_REGS2));
+// 	}
+// 	println("%4.4f".format(timeHolder / 100))	
+// }
+
+for (i <- 1 to 100 by 1) {
+	sizeAccumulator = 0;
+	parseSimpStack((prog2 * i).toList, WHILE_REGS);
+	println(sizeAccumulator);
+}
+
+// for (i <- 1 to 100 by 1) {
+// 	sizeAccumulator = 0;
+// 	parseSimpStack((prog3 * i).toList, WHILE_REGS2);
+// 	println(sizeAccumulator);
+// }
+
+// var j = 1;
+// while (j <= 1000000) {
+// 	var sizeAccumulator: Double = 0;
+// 	for(i <- 1 to 100 by 1) {
+// 		sizeAccumulator += time(parseSimpStack((sequenceOfA * j).toList, abReg));
+// 	}
+// 	println("%4.4f".format(sizeAccumulator / 100));
+// 	j *= 10;
+// }
+
+// for (i <- 1 to 50 by 1) {
+// 	var timeHolder: Double = 0;
+// 	for (j <- 1 to 100 by 1) {			
+//   		timeHolder += time(parseSimpStack((prog2 * i).toList, WHILE_REGS));
+//   	}
+//   	println("%4.4f".format(timeHolder / 100));
+// }
+
+
+
+
+
+// parseSimpStack((prog2 * 100).toList, WHILE_REGS)
 
 // for (i <- 1 to 50 by 1) {
 //   time(parseSimp(WHILE_REGS, (prog2 * i).toList))

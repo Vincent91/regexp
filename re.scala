@@ -241,24 +241,17 @@ val LPAREN: Rexp = "("
 val BEGIN: Rexp = "{"
 val END: Rexp = "}"
 
-val WHILE_REGS = (("k" $ KEYWORD) | 
-                  ("i" $ ID) | 
+val WHILE_REGS = (("i" $ ID) | 
                   ("o" $ OP) | 
                   ("n" $ NUM) | 
                   ("s" $ SEMI) | 
                   ("p" $ (LPAREN | RPAREN)) | 
                   ("b" $ (BEGIN | END)) | 
-                  ("w" $ WHITESPACE)).%
+                  ("w" $ WHITESPACE) | 
+                  ("k" $ KEYWORD)).%
 
 
-val WHILE_REGS2 = (KEYWORD | 
-                  ID | 
-                  OP | 
-                  NUM | 
-                  SEMI | 
-                  LPAREN | RPAREN | 
-                  BEGIN | END | 
-                  WHITESPACE).%
+val WHILE_REGS2 = (KEYWORD | ID).%
 
 //val WHILE_REGS = (KEYWORD | ID | OP | NUM | SEMI | LPAREN | RPAREN | BEGIN | END | WHITESPACE).%
 
@@ -266,8 +259,8 @@ val SEQUENCE_CHOICE: Rexp = "bbbb" | "abbb" | "aabb" | "aaab"
 
 val SIMPLE_REGS = ("k" $ SEQUENCE_CHOICE)
 
-val atata = "r"
-println(lexing_simp(WHILE_REGS, atata))
+val atata = "read"
+println(lexing_simp(WHILE_REGS2, atata))
 // Some Tests
 //============
 
